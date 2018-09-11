@@ -57,30 +57,77 @@ LinkedHashMap swaggerData(String swaggerUrl) {
     def extractRef = { String ref ->
         ref[ref.lastIndexOf('/') + 1..-1]
     }
-    def resolveRef = { String ref ->
-        root['definitions'][ref]
+    def resolveRef = { String refName ->
+        def ref = root['definitions'][refName]
+        ref['name'] = refName
+        return ref
     }
     def resolveType = { data, key ->
         //System.err.println("${key}  ${data}")
         //System.err.flush()
+        String refName
+        String refType
+        String refMultiple
         if (data['type']) {
-            // Normal parameter type
+            // Primitive
+            refName = data['type']
+            refType = null
+            refMultiple = null
         } else if (data['schema']) {
             // Schema parameter type
-            String refName
             if (data['schema']['$ref']) {
                 refName = extractRef(data['schema']['$ref'])
-                data['type'] = "${refName}"
-                data['schema']['$ref'] = resolveRef(refName)
+                ref = resolveRef(refName)
+                // Expand nested schemas
+                if (ref['properties']['content']) {
+                    content = ref['properties']['content']
+                    //System.err.println(">> ${content}")
+                    //System.err.flush()
+                    if (content['$ref']) {
+                        // Singleton
+                        refName = extractRef(content['$ref'])
+                        refType = resolveRef(refName)
+                        refMultiple = null
+                    } else if (content['type'] && content['format']) {
+                        // Primitive singleton
+                        refName = content['type']
+                        refType = null
+                        refMultiple = null
+                    } else if (content['additionalProperties']) {
+                        // Primitive singleton
+                        refName = content['additionalProperties']['type']
+                        refType = null
+                        refMultiple = null
+                    } else if (content['items']['enum']) {
+                        // Enum singleton
+                        refName = "enum"
+                        refType = content['enum']
+                        refMultiple = null
+                    } else if (content['items']['$ref']) {
+                        // Page
+                        refName = extractRef(content['items']['$ref'])
+                        refType = resolveRef(refName)
+                        refMultiple = content['type']
+                    } else {
+                        throw new RuntimeException(
+                            "Don't know how to handle data in ${key}"
+                        )
+                    }
+                } else {
+                    refType = ref
+                    refMultiple = null
+                }
             } else if (data['schema']['type']) {
                 if (data['schema']['items']) {
                     // Array
                     refName = extractRef(data['schema']['items']['$ref'])
-                    data['type'] = "${data['schema']['type']} of ${refName}"
-                    data['schema']['$ref'] = resolveRef(refName)
+                    refType = resolveRef(refName)
+                    refMultiple = data['schema']['type']
                 } else {
                     // Primitive
-                    data['type'] = data['schema']['type']
+                    refName = data['schema']['type']
+                    refType = null
+                    refMultiple = null
                 }
             } else {
                 throw new RuntimeException(
@@ -89,8 +136,13 @@ LinkedHashMap swaggerData(String swaggerUrl) {
             }
         } else {
             // Nothing
-            data['type'] = null
+            refName = null
+            refType = null
+            refMultiple = null
         }
+        data['type'] = refName
+        data['typeRef'] = refType
+        data['typeMultiple'] = refMultiple
     }
 
     // Calculate some indexes
@@ -112,10 +164,10 @@ LinkedHashMap swaggerData(String swaggerUrl) {
                 // Resolve $ref syntax for schemas
                 String debugKey = "${tag} ${methodData.operationId}"
                 methodData['parameters'].each { data ->
-                    resolveType(data, debugKey)
+                    resolveType(data, "${debugKey} ${data.name}")
                 }
                 methodData['responses'].each { status, data ->
-                    resolveType(data, debugKey)
+                    resolveType(data, "${debugKey} ${data.description}")
                     // Add in some more ease-of-use data
                     data['status'] = status
                 }
@@ -165,6 +217,9 @@ String formatListing(String swaggerUrl, String includePattern, Integer maxLength
                         out << data['name']
                         out << ' ('
                         out << data['type']
+                        if (data['typeMultiple'] == 'array') {
+                            out << '+'
+                        }
                         out << ') '
                         out << wordWrap(
                             data['description'] ?: 'No description provided',
@@ -184,6 +239,9 @@ String formatListing(String swaggerUrl, String includePattern, Integer maxLength
                         if (data['type'] != null) {
                             out << '  <- '
                             out << data['type']
+                            if (data['typeMultiple'] == 'array') {
+                                out << '+'
+                            }
                             out << '\n'
                             return true
                         }
