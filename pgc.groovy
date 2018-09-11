@@ -135,6 +135,24 @@ String formatListing(String swaggerUrl, String includePattern, Integer maxLength
 
     def out = new StringBuilder()
 
+    // Local helper functions
+    def typeOut = { name, type, description ->
+        Integer start = out.length()
+        out << '  '
+        out << name
+        out << ' ('
+        out << type
+        out << ') '
+        out << wordWrap(
+            description ?: 'No description provided',
+            maxLength,
+            // Measure the length of the initial line info so we
+            // know where to wrap to.
+            out.length() - start,
+        )
+        out << '\n'
+    }
+
     String tag
     String prevTag = null
     root['tags'].each { tagData ->
@@ -157,23 +175,20 @@ String formatListing(String swaggerUrl, String includePattern, Integer maxLength
                     }
                 }
                 out << '\n'
-                md.parameters.each { paramData ->
-                    Integer start = out.length()
-                    out << '  '
-                    out << paramData['name']
-                    out << ' ('
-                    out << paramData['type']
-                    out << ') '
-                    out << wordWrap(
-                        paramData['description'] ?: 'No description provided',
-                        maxLength,
-                        // Measure the length of the initial line info so we
-                        // know where to wrap to.
-                        out.length() - start,
+                md.parameters.each { data ->
+                    typeOut(
+                        data['name'],
+                        data['type'],
+                        data['descripton'],
                     )
-                    out << '\n'
                 }
-                // TODO return data
+                md.responses.each { status, data ->
+                    typeOut(
+                        "Resp ${status}",
+                        data['type'],
+                        data['descripton'],
+                    )
+                }
                 out << '\n'
             }
         }
