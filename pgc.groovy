@@ -137,6 +137,8 @@ String formatListing(String swaggerUrl, String includePattern, Integer maxLength
 
     // Local helper functions
     def typeOut = { name, type, description ->
+        //System.err.println("${name} ${type} ${description}")
+        //System.err.flush()
         Integer start = out.length()
         out << '  '
         out << name
@@ -181,7 +183,7 @@ String formatListing(String swaggerUrl, String includePattern, Integer maxLength
                         typeOut(
                             data['name'],
                             data['type'],
-                            data['descripton'],
+                            data['description'],
                         )
                     }
                 }
@@ -192,9 +194,9 @@ String formatListing(String swaggerUrl, String includePattern, Integer maxLength
                         // return anything.
                         if (data['type'] != null) {
                             typeOut(
-                                "Returns:",
+                                "Returns ->",
                                 data['type'],
-                                data['descripton'],
+                                data['description'],
                             )
                             return true
                         }
