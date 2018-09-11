@@ -158,9 +158,9 @@ String formatListing(String swaggerUrl, String includePattern, Integer maxLength
                         Integer start = out.length()
                         out << '  '
                         if (data['required']) {
-                            out << '-!> '
+                            out << '=> '
                         } else {
-                            out << '--> '
+                            out << '-> '
                         }
                         out << data['name']
                         out << ' ('
@@ -182,7 +182,7 @@ String formatListing(String swaggerUrl, String includePattern, Integer maxLength
                         // Do not print return data for methods that don't
                         // return anything.
                         if (data['type'] != null) {
-                            out << '  <-- '
+                            out << '  <- '
                             out << data['type']
                             out << '\n'
                             return true
