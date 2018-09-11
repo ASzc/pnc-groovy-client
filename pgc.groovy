@@ -61,8 +61,8 @@ LinkedHashMap swaggerData(String swaggerUrl) {
         root['definitions'][ref]
     }
     def resolveType = { data, key ->
-        System.err.println("${key}  ${data}")
-        System.err.flush()
+        //System.err.println("${key}  ${data}")
+        //System.err.flush()
         if (data['type']) {
             // Normal parameter type
         } else if (data['schema']) {
@@ -182,12 +182,18 @@ String formatListing(String swaggerUrl, String includePattern, Integer maxLength
                         data['descripton'],
                     )
                 }
-                md.responses.each { status, data ->
-                    typeOut(
-                        "Resp ${status}",
-                        data['type'],
-                        data['descripton'],
-                    )
+                md.responses.any { status, data ->
+                    // Success return type seems to be the only intersting one
+                    System.err.println("${status}  ${data}")
+                    System.err.flush()
+                    if (status == 'default' || Integer.valueOf(status).intdiv(100) == 2) {
+                        typeOut(
+                            "Success:",
+                            data['type'],
+                            data['descripton'],
+                        )
+                        return true
+                    }
                 }
                 out << '\n'
             }
