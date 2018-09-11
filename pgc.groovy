@@ -53,6 +53,14 @@ LinkedHashMap swaggerData(String swaggerUrl) {
 
     LinkedHashMap root = new JsonSlurper().parse(cached)
 
+    // Local helper functions
+    def extractRef = { String ref ->
+        ref[ref.lastIndexOf('/') + 1..-1]
+    }
+    def resolveRef = { String ref ->
+        root['definitions'][ref]
+    }
+
     // Calculate some indexes
     def pathMethodsByTag = [:]
     root['pathMethodsByTag'] = pathMethodsByTag
@@ -62,11 +70,42 @@ LinkedHashMap swaggerData(String swaggerUrl) {
                 if (!pathMethodsByTag.containsKey(tag)) {
                     pathMethodsByTag[tag] = []
                 }
-                // Add in some ease-of-use data too
                 pathMethodsByTag[tag].add(methodData)
+
+                // Add in some ease-of-use data too
                 methodData['path'] = path
                 methodData['method'] = method
                 methodData['operationIdDashed'] = dashSeparated(methodData['operationId'])
+
+                // Resolve $ref syntax for schemas
+                methodData['parameters'].each { paramData ->
+                    if (paramData['type']) {
+                        // Normal parameter type
+                    } else if (paramData['schema']) {
+                        // Schema parameter type
+                        String refName
+                        if (paramData['schema']['$ref']) {
+                            refName = extractRef(paramData['schema']['$ref'])
+                            paramData['type'] = "${refName}"
+                        } else if (paramData['schema']['type']) {
+                            refName = extractRef(paramData['schema']['items']['$ref'])
+                            paramData['type'] = "${paramData['schema']['type']} of ${refName}"
+                        } else {
+                            throw new RuntimeException(
+                                "Don't know how to handle type of parameter " +
+                                "${paramData.name} of method ${tag}" +
+                                "${methodData.operationId}"
+                            )
+                        }
+                        paramData['schema']['$ref'] = resolveRef(refName)
+                    } else {
+                        throw new RuntimeException(
+                            "Don't know how to handle type of parameter " +
+                            "${paramData.name} of method ${tag}" +
+                            "${methodData.operationId}"
+                        )
+                    }
+                }
             }
         }
     }
@@ -110,40 +149,15 @@ String formatListing(String swaggerUrl, String includePattern, Integer maxLength
                     out << '  '
                     out << paramData['name']
                     out << ' ('
-                    if (paramData['type']) {
-                        // Normal parameter type
-                        out << paramData['type']
-                        out << ') '
-                        out << wordWrap(
-                            paramData['description'] ?: 'No description provided',
-                            maxLength,
-                            // Measure the length of the initial line info so we
-                            // know where to wrap to.
-                            out.length() - start,
-                        )
-                    } else if (paramData['schema']) {
-                        // Schema parameter type
-                        if (paramData['schema']['$ref']) {
-                            String ref = paramData['schema']['$ref']
-                            out << ref[ref.lastIndexOf('/') + 1..-1]
-                        } else if (paramData['schema']['type']) {
-                            out << paramData['schema']['type']
-                            out << ' of '
-                            String ref = paramData['schema']['items']['$ref']
-                            out << ref[ref.lastIndexOf('/') + 1..-1]
-                        } else {
-                            throw new RuntimeException(
-                                "Don't know how to handle type of parameter " +
-                                "${paramData.name} of method ${key}"
-                            )
-                        }
-                        out << ') JSON'
-                    } else {
-                        throw new RuntimeException(
-                            "Don't know how to handle type of parameter " +
-                            "${paramData.name} of method ${key}"
-                        )
-                    }
+                    out << paramData['type']
+                    out << ') '
+                    out << wordWrap(
+                        paramData['description'] ?: 'No description provided',
+                        maxLength,
+                        // Measure the length of the initial line info so we
+                        // know where to wrap to.
+                        out.length() - start,
+                    )
                     out << '\n'
                 }
                 // TODO return data
