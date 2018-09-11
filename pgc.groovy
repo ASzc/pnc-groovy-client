@@ -60,6 +60,38 @@ LinkedHashMap swaggerData(String swaggerUrl) {
     def resolveRef = { String ref ->
         root['definitions'][ref]
     }
+    def resolveType = { data, key ->
+        System.err.println("${key}  ${data}")
+        System.err.flush()
+        if (data['type']) {
+            // Normal parameter type
+        } else if (data['schema']) {
+            // Schema parameter type
+            String refName
+            if (data['schema']['$ref']) {
+                refName = extractRef(data['schema']['$ref'])
+                data['type'] = "${refName}"
+                data['schema']['$ref'] = resolveRef(refName)
+            } else if (data['schema']['type']) {
+                if (data['schema']['items']) {
+                    // Array
+                    refName = extractRef(data['schema']['items']['$ref'])
+                    data['type'] = "${data['schema']['type']} of ${refName}"
+                    data['schema']['$ref'] = resolveRef(refName)
+                } else {
+                    // Primitive
+                    data['type'] = data['schema']['type']
+                }
+            } else {
+                throw new RuntimeException(
+                    "Don't know how to handle data in ${key}"
+                )
+            }
+        } else {
+            // Nothing
+            data['type'] = null
+        }
+    }
 
     // Calculate some indexes
     def pathMethodsByTag = [:]
@@ -78,33 +110,14 @@ LinkedHashMap swaggerData(String swaggerUrl) {
                 methodData['operationIdDashed'] = dashSeparated(methodData['operationId'])
 
                 // Resolve $ref syntax for schemas
-                methodData['parameters'].each { paramData ->
-                    if (paramData['type']) {
-                        // Normal parameter type
-                    } else if (paramData['schema']) {
-                        // Schema parameter type
-                        String refName
-                        if (paramData['schema']['$ref']) {
-                            refName = extractRef(paramData['schema']['$ref'])
-                            paramData['type'] = "${refName}"
-                        } else if (paramData['schema']['type']) {
-                            refName = extractRef(paramData['schema']['items']['$ref'])
-                            paramData['type'] = "${paramData['schema']['type']} of ${refName}"
-                        } else {
-                            throw new RuntimeException(
-                                "Don't know how to handle type of parameter " +
-                                "${paramData.name} of method ${tag}" +
-                                "${methodData.operationId}"
-                            )
-                        }
-                        paramData['schema']['$ref'] = resolveRef(refName)
-                    } else {
-                        throw new RuntimeException(
-                            "Don't know how to handle type of parameter " +
-                            "${paramData.name} of method ${tag}" +
-                            "${methodData.operationId}"
-                        )
-                    }
+                String debugKey = "${tag} ${methodData.operationId}"
+                methodData['parameters'].each { data ->
+                    resolveType(data, debugKey)
+                }
+                methodData['responses'].each { status, data ->
+                    resolveType(data, debugKey)
+                    // Add in some more ease-of-use data
+                    data['status'] = status
                 }
             }
         }
