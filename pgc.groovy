@@ -176,23 +176,28 @@ String formatListing(String swaggerUrl, String includePattern, Integer maxLength
                 }
                 out << '\n'
                 md.parameters.each { data ->
-                    typeOut(
-                        data['name'],
-                        data['type'],
-                        data['descripton'],
-                    )
-                }
-                md.responses.any { status, data ->
-                    // Success return type seems to be the only intersting one
-                    System.err.println("${status}  ${data}")
-                    System.err.flush()
-                    if (status == 'default' || Integer.valueOf(status).intdiv(100) == 2) {
+                    // Pages are handled transparent to the user
+                    if (! (data['name'] in ["pageIndex", "pageSize"])) {
                         typeOut(
-                            "Success:",
+                            data['name'],
                             data['type'],
                             data['descripton'],
                         )
-                        return true
+                    }
+                }
+                md.responses.any { status, data ->
+                    // Success return type seems to be the only intersting one
+                    if (status == 'default' || Integer.valueOf(status).intdiv(100) == 2) {
+                        // Do not print return data for methods that don't
+                        // return anything.
+                        if (data['type'] != null) {
+                            typeOut(
+                                "Returns:",
+                                data['type'],
+                                data['descripton'],
+                            )
+                            return true
+                        }
                     }
                 }
                 out << '\n'
