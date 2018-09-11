@@ -135,26 +135,6 @@ String formatListing(String swaggerUrl, String includePattern, Integer maxLength
 
     def out = new StringBuilder()
 
-    // Local helper functions
-    def typeOut = { name, type, description ->
-        //System.err.println("${name} ${type} ${description}")
-        //System.err.flush()
-        Integer start = out.length()
-        out << '  '
-        out << name
-        out << ' ('
-        out << type
-        out << ') '
-        out << wordWrap(
-            description ?: 'No description provided',
-            maxLength,
-            // Measure the length of the initial line info so we
-            // know where to wrap to.
-            out.length() - start,
-        )
-        out << '\n'
-    }
-
     String tag
     String prevTag = null
     root['tags'].each { tagData ->
@@ -169,22 +149,31 @@ String formatListing(String swaggerUrl, String includePattern, Integer maxLength
                 prevTag = tag
 
                 out << key
-                md.parameters.each { paramData ->
-                    if (paramData['required']) {
-                        out << ' -a '
-                        out << paramData['name']
-                        out << '=V'
-                    }
-                }
                 out << '\n'
                 md.parameters.each { data ->
                     // Pages are handled transparent to the user
                     if (! (data['name'] in ["pageIndex", "pageSize"])) {
-                        typeOut(
-                            data['name'],
-                            data['type'],
-                            data['description'],
+                        //System.err.println("${name} ${type} ${description}")
+                        //System.err.flush()
+                        Integer start = out.length()
+                        out << '  '
+                        if (data['required']) {
+                            out << '-!> '
+                        } else {
+                            out << '--> '
+                        }
+                        out << data['name']
+                        out << ' ('
+                        out << data['type']
+                        out << ') '
+                        out << wordWrap(
+                            data['description'] ?: 'No description provided',
+                            maxLength,
+                            // Measure the length of the initial line info so we
+                            // know where to wrap to.
+                            out.length() - start,
                         )
+                        out << '\n'
                     }
                 }
                 md.responses.any { status, data ->
@@ -193,11 +182,9 @@ String formatListing(String swaggerUrl, String includePattern, Integer maxLength
                         // Do not print return data for methods that don't
                         // return anything.
                         if (data['type'] != null) {
-                            typeOut(
-                                "Returns ->",
-                                data['type'],
-                                data['description'],
-                            )
+                            out << '  <-- '
+                            out << data['type']
+                            out << '\n'
                             return true
                         }
                     }
