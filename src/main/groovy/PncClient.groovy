@@ -1,34 +1,51 @@
-#!/usr/bin/env groovy
-
 package ca.szc.groovy.pnc
 
 import groovy.cli.picocli.CliBuilder
 import groovy.cli.picocli.OptionAccessor
+import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import groovy.transform.Memoized
 
 import java.security.MessageDigest
 
+import groovyx.net.http.ContentTypes
+import groovyx.net.http.optional.Download
+import groovyx.net.http.HttpBuilder
+
 class PncClient {
 
-    private URL apiUrl
+    private HttpBuilder http
     private LinkedHashMap apiData
 
     /**
      * Prepare a client to operate against the PNC REST API, by preprocessing
      * the swagger data published by that API.
      *
-     * @param apiRoot The common URL prefix of the REST API, including scheme,
-     * host, and path (http://pnc.example.com/pnc-rest/rest). Should contain
-     * swagger.json
+     * @param apiUrl The URL to swagger.json, within the REST API, including
+     * scheme, host, and path. Example:
+     * http://pnc.example.com/pnc-rest/rest/swagger.json
      */
-    PncClient(String apiRoot) {
-        this.apiUrl = apiRoot.toURL()
-        this.apiData = swaggerData(apiRoot + '/swagger.json')
+    PncClient(String apiUrl) {
+        this.http = HttpBuilder.configure {
+            request.uri = apiUrl
+            request.contentType = ContentTypes.JSON[0]
+        }
+
+        File cached = new File(
+            System.getenv()['PGC_CACHE'] ?:
+            (System.getProperty("user.home") +
+                "/.cache/pgc-${sha256(apiUrl)}.json")
+        )
+        if (!cached.exists()) {
+            this.http.get { Download.toFile(delegate, cached) }
+        }
+        LinkedHashMap root = new JsonSlurper().parse(cached)
+        this.apiData = swaggerData(root)
     }
 
     /**
-     * Call an API method with zero or more arguments
+     * Call an API method with zero or more arguments, returning any output as
+     * a single piece once it has all been received from the API.
      *
      * @param group Category (group/tag) of the method
      * @param operation Operation identity of the method
@@ -36,11 +53,136 @@ class PncClient {
      * @return Parsed json data, or null if the method returns nothing.
      */
     def exec(String group, String operation, Map kwargs=[:]) {
+        rawOutput = new StringWriter()
+        execStream(group, operation, rawOutput, kwargs)
+        return new JsonSlurper().parseText(rawOutput.toString())
+    }
+
+    /**
+     * Call an API method with zero or more arguments, returning any output
+     * piecewise, as it is received from the API. Any pagination artifacts will
+     * be stripped, so that the returned data is a single valid piece of json
+     * text.
+     *
+     * @param group Category (group/tag) of the method
+     * @param operation Operation identity of the method
+     * @param output Where to stream the output to
+     * @param kwargs Zero or more arguments for the method
+     */
+    void execStream(String group, String operation, Writer output, Map kwargs=[:]) {
         def method = apiData['pathMethodsByTagAndId'][group][operation]
 
-        println("${method['method']} ${method['path']} ${kwargs}")
+        //println("${method['method']} ${method['path']} ${kwargs}")
+
         // Allocate kwargs to where the method data says they each need to go
-        // TODO
+        def pathParams = []
+        def queryParams = [:]
+        def bodyParams = [:]
+        kwargs.each { k, v ->
+            if (!(k in method['parametersByName'])) {
+                throw new ModelCoerceException("Can't add parameter ${k} to execution, it isn't expected")
+            }
+            def parameter = method['parametersByName'][k]
+            switch (parameter['in']) {
+                case 'path':
+                    pathParams.add(parameter)
+                    break
+                case 'query':
+                    queryParams[k] = v
+                    break
+                case 'body':
+                    bodyParams[k] = v
+                    break
+                default:
+                    throw new ModelCoerceException("Unknown target ${parameter['in']} for parameter ${k}")
+            }
+        }
+
+        // Detect pagination
+        def paginated = false
+        if ('pageIndex' in method['parametersByName']) {
+            paginated = true
+            assert method['parametersByName']['pageIndex']['in'] == 'query'
+            queryParams['pageIndex'] = 0
+            queryParams['pageSize'] = 100
+        }
+
+        // Path
+        def pathParts = method['path'].tokenize('/')
+        pathParams.each { parameter ->
+            pathParts = pathParts.collect { part ->
+                if (part == "{${parameter['name']}}") {
+                    return kwargs[parameter['name']]
+                } else {
+                    return part
+                }
+            }
+        }
+        def path = "${apiData['basePath']}/${pathParts.join('/')}"
+
+        // TODO Not implemented
+        assert !bodyParams
+
+        // Make at least one HTTP request.
+        // More than one may be required in any combination of these cases:
+        //   - API requests authentication
+        //   - API returns paginated data
+        def authNeeded = false
+        def pagesPending = false
+        def pageStitch = false
+        def makeRequests = {
+            def resp = http.get {
+                request.uri.path = path
+                request.uri.query = queryParams
+
+                response.when(401) { fromServer, body ->
+                    authNeeded = false
+                    return body
+                }
+
+                response.failure { fromServer, body ->
+                    return body
+                }
+            }
+            if (resp instanceof Map && 'errorMessage' in resp) {
+                throw new ServerException(resp['errorMessage'])
+            }
+
+            if (authNeeded) {
+                // TODO, auth with the keycloak realm
+                assert false
+            } else {
+                def json
+                if (paginated) {
+                    pagesPending = (resp['totalPages'] - 1) > resp['pageIndex']
+                    json = JsonOutput.prettyPrint(JsonOutput.toJson(resp['content']))
+
+                    // Strip characters so the pages can be stitched together
+                    if (pagesPending) {
+                        if (pageStitch) {
+                            // Middle page, remove array open and close
+                            json = json[1..-3] + ',\n'
+                        } else {
+                            // First page, remove array close
+                            json = json[0..-3] + ',\n'
+                            pageStitch = true
+                        }
+                        queryParams['pageIndex'] = resp['pageIndex'] + 1
+                    } else if (pageStitch) {
+                        // Last page, remove array open
+                        json = json[1..-1]
+                        pageStitch = false
+                    }
+                } else {
+                    json = JsonOutput.prettyPrint(JsonOutput.toJson(resp))
+                    pagesPending = false
+                }
+                output.write(json)
+                output.flush()
+            }
+            return authNeeded || pagesPending
+        }
+        while (makeRequests()) continue
     }
 
     //
@@ -75,19 +217,7 @@ class PncClient {
     // Model
     //
 
-    static LinkedHashMap swaggerData(String swaggerUrl) {
-        File cached = new File(System.getenv()['PGC_CACHE'] ?: (System.getProperty("user.home") + "/.cache/pgc-${sha256(swaggerUrl)}.json"))
-
-        if (!cached.exists()) {
-            cached.withOutputStream { output ->
-                swaggerUrl.toURL().withInputStream { input ->
-                    output << input
-                }
-            }
-        }
-
-        LinkedHashMap root = new JsonSlurper().parse(cached)
-
+    static LinkedHashMap swaggerData(LinkedHashMap root) {
         // Local helper functions
         def extractRef = { String ref ->
             ref[ref.lastIndexOf('/') + 1..-1]
@@ -205,9 +335,12 @@ class PncClient {
                     }
 
                     // Resolve $ref syntax for schemas
+                    def parametersByName = [:]
+                    methodData['parametersByName'] = parametersByName
                     String debugKey = "${tag} ${methodData.operationId}"
                     methodData['parameters'].each { data ->
                         resolveType(data, "${debugKey} ${data.name}")
+                        parametersByName[data['name']] = data
                     }
                     methodData['responses'].each { status, data ->
                         resolveType(data, "${debugKey} ${data.description}")
@@ -225,8 +358,8 @@ class PncClient {
     // List Command
     //
 
-    static String formatListing(String swaggerUrl, String includePattern, Integer maxLength=80) {
-        def root = swaggerData(swaggerUrl)
+    String formatListing(String includePattern, Integer maxLength=80) {
+        def root = apiData
 
         def out = new StringBuilder()
 
@@ -446,7 +579,20 @@ class PncClient {
 
                     readConfig()
 
-                    new PncClient(pncUrl).exec(group, operation, callArgs)
+                    try {
+                        new PncClient(pncUrl).execStream(
+                            group,
+                            operation,
+                            new PrintWriter(System.out),
+                            callArgs,
+                        )
+                    } catch (ModelCoerceException e) {
+                        console.println(e.message)
+                        return 5
+                    } catch (ServerException e) {
+                        console.println(e.message)
+                        return 6
+                    }
                     break
                 case 'list':
                     def suboptions = parse(commandList(), subargs)
@@ -454,11 +600,12 @@ class PncClient {
 
                     readConfig()
 
-                    System.out.print(formatListing(
-                        pncUrl + '/swagger.json',
-                        suboptions.e ?: /.*/,
-                        consoleWidth(),
-                    ))
+                    System.out.print(
+                        new PncClient(pncUrl).formatListing(
+                            suboptions.e ?: /.*/,
+                            consoleWidth(),
+                        )
+                    )
                     break
                 default:
                     console.println("error: Unknown subcommand ${subcommand}")

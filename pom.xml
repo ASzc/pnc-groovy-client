@@ -51,6 +51,16 @@
             <artifactId>commons-cli</artifactId>
             <version>1.3.1</version>
         </dependency>
+        <dependency>
+            <groupId>io.github.http-builder-ng</groupId>
+            <artifactId>http-builder-ng-core</artifactId>
+            <version>1.0.3</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-nop</artifactId>
+            <version>1.7.9</version>
+        </dependency>
     </dependencies>
 
     <build>
