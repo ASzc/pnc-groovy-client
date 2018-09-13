@@ -479,10 +479,8 @@ class PncClient {
         }
         return 0
     }
+
+    static void main(String... args) {
+        System.exit(PncClient.cli(args))
+    }
 }
-
-//
-// Main
-//
-
-System.exit(PncClient.cli(args))
