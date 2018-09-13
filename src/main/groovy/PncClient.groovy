@@ -2,6 +2,8 @@
 
 package ca.szc.groovy.pnc
 
+import groovy.cli.picocli.CliBuilder
+import groovy.cli.picocli.OptionAccessor
 import groovy.json.JsonSlurper
 import groovy.transform.Memoized
 
@@ -346,8 +348,7 @@ class PncClient {
             h longOpt: 'help',
               'Show usage information'
             a longOpt: 'arg',
-              args: 2,
-              valueSeparator: '=',
+              type: Map,
               argName: 'ARGUMENT=VALUE',
               'Zero or more arguments for the endpoint Key=Value format. Value will be automatically coerced from a string to the appropriate type if needed by the endpoint.'
         }
@@ -441,17 +442,7 @@ class PncClient {
                     def operation = positionals[1]
 
                     // Optional args -> call keyword arguments
-                    // Groovy 2.4.x's CliBuilder spits them out as a big list, can
-                    // remove this if Fedora ever updates to 2.5+
-                    def callArgs = [:]
-                    def key = null
-                    suboptions.as.each { a ->
-                        if (key == null) {
-                            key = a
-                        } else {
-                            callArgs[key] = a
-                        }
-                    }
+                    def callArgs = suboptions.as
 
                     readConfig()
 
