@@ -388,7 +388,7 @@ class PncClient {
     // List Command
     //
 
-    String formatListing(String includePattern, Integer maxLength=80) {
+    String formatListing(String includePattern, Integer maxLength=80, Integer verbosity=0) {
         def root = apiData
 
         def out = new StringBuilder()
@@ -399,62 +399,69 @@ class PncClient {
             tag = tagData['name']
             root['pathMethodsByTag'][tag].each { md ->
                 String key = "${tag} ${md.operationIdDashed}"
-                if (key =~ includePattern) {
-                    // Add separator between different groups
-                    if (prevTag != null && tag != prevTag) {
-                        out << '===\n\n'
-                    }
-                    prevTag = tag
+                if (!(key =~ includePattern)) {
+                    return
+                }
 
-                    out << key
-                    out << '\n'
-                    md.parameters.each { data ->
-                        // Pages are handled transparent to the user
-                        if (! (data['name'] in ["pageIndex", "pageSize"])) {
-                            //System.err.println("${name} ${type} ${description}")
-                            //System.err.flush()
-                            Integer start = out.length()
-                            out << '  '
-                            if (data['required']) {
-                                out << '=> '
-                            } else {
-                                out << '-> '
-                            }
-                            out << data['name']
-                            out << ' ('
+                // Add separator between different groups
+                if (verbosity >= 1 && prevTag != null && tag != prevTag) {
+                    out << '===\n\n'
+                }
+                prevTag = tag
+
+                out << key
+                out << '\n'
+
+                if (verbosity <= 0) {
+                    return
+                }
+
+                md.parameters.each { data ->
+                    // Pages are handled transparent to the user
+                    if (! (data['name'] in ["pageIndex", "pageSize"])) {
+                        //System.err.println("${name} ${type} ${description}")
+                        //System.err.flush()
+                        Integer start = out.length()
+                        out << '  '
+                        if (data['required']) {
+                            out << '=> '
+                        } else {
+                            out << '-> '
+                        }
+                        out << data['name']
+                        out << ' ('
+                        out << data['type']
+                        if (data['typeMultiple'] == 'array') {
+                            out << '+'
+                        }
+                        out << ') '
+                        out << wordWrap(
+                            data['description'] ?: 'No description provided',
+                            maxLength,
+                            // Measure the length of the initial line info so we
+                            // know where to wrap to.
+                            out.length() - start,
+                        )
+                        out << '\n'
+                    }
+                }
+                md.responses.any { status, data ->
+                    // Success return type seems to be the only intersting one
+                    if (status == 'default' || Integer.valueOf(status).intdiv(100) == 2) {
+                        // Do not print return data for methods that don't
+                        // return anything.
+                        if (data['type'] != null) {
+                            out << '  <- '
                             out << data['type']
                             if (data['typeMultiple'] == 'array') {
                                 out << '+'
                             }
-                            out << ') '
-                            out << wordWrap(
-                                data['description'] ?: 'No description provided',
-                                maxLength,
-                                // Measure the length of the initial line info so we
-                                // know where to wrap to.
-                                out.length() - start,
-                            )
                             out << '\n'
+                            return true
                         }
                     }
-                    md.responses.any { status, data ->
-                        // Success return type seems to be the only intersting one
-                        if (status == 'default' || Integer.valueOf(status).intdiv(100) == 2) {
-                            // Do not print return data for methods that don't
-                            // return anything.
-                            if (data['type'] != null) {
-                                out << '  <- '
-                                out << data['type']
-                                if (data['typeMultiple'] == 'array') {
-                                    out << '+'
-                                }
-                                out << '\n'
-                                return true
-                            }
-                        }
-                    }
-                    out << '\n'
                 }
+                out << '\n'
             }
         }
 
@@ -530,6 +537,8 @@ class PncClient {
         cli.with {
             h longOpt: 'help',
               'Show usage information'
+            v longOpt: 'verbose',
+              'Show more detailed information. Can be used multiple times.'
             e longOpt: 'regexp',
               args: 1,
               argName: 'PATTERN',
@@ -631,6 +640,7 @@ class PncClient {
                         new PncClient(pncUrl).formatListing(
                             suboptions.e ?: /.*/,
                             consoleWidth(),
+                            (suboptions.vs ?: []).size(),
                         )
                     )
                     break
