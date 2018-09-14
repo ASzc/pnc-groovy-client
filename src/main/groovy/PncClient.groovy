@@ -24,22 +24,44 @@ class PncClient {
      * @param apiUrl The URL to swagger.json, within the REST API, including
      * scheme, host, and path. Example:
      * http://pnc.example.com/pnc-rest/rest/swagger.json
+     * @param cache If false, disable caching. If a File, use that directory as
+     * the cache directory. Otherwise use the default cache directory.
      */
-    PncClient(String apiUrl) {
+    PncClient(String apiUrl, cache=null) {
         this.http = HttpBuilder.configure {
             request.uri = apiUrl
             request.contentType = ContentTypes.JSON[0]
         }
 
-        File cached = new File(
-            System.getenv()['PGC_CACHE'] ?:
-            (System.getProperty("user.home") +
-                "/.cache/pgc-${sha256(apiUrl)}.json")
-        )
-        if (!cached.exists()) {
-            this.http.get { Download.toFile(delegate, cached) }
+        def cacheDir
+        if (cache == false) {
+            cacheDir = null
+        } else if (cache instanceof File) {
+            cacheDir = File
+        } else {
+            cacheDir = System.getenv()['PGC_CACHE'] ?:
+                           (System.getProperty("user.home") + "/.cache/pgc")
         }
-        LinkedHashMap root = new JsonSlurper().parse(cached)
+
+        LinkedHashMap root
+        if (cacheDir != null) {
+            cacheDir = new File(cacheDir)
+            cacheDir.mkdirs()
+            File swaggerCache = new File(cacheDir, "${sha256(apiUrl)}.json")
+            if (!swaggerCache.exists()) {
+                this.http.get { Download.toFile(delegate, swaggerCache) }
+            }
+            root = new JsonSlurper().parse(swaggerCache)
+            // In theory the processed data could be cached too, but it doesn't
+            // take a perceptible amount of time to process, so will leave that
+            // to later, if the general groovy boot time can be improved.
+            // Caching the processed data is more complicated because it has
+            // recursive links, can't be done with json.
+            // https://stackoverflow.com/a/38882383
+        } else {
+            root = this.http.get { }
+        }
+
         this.apiData = swaggerData(root)
     }
 
