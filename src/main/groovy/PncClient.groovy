@@ -132,6 +132,7 @@ class PncClient {
         def pagesPending = false
         def pageStitch = false
         def makeRequests = {
+            def failure = null
             def resp = http.get {
                 request.uri.path = path
                 request.uri.query = queryParams
@@ -142,11 +143,15 @@ class PncClient {
                 }
 
                 response.failure { fromServer, body ->
+                    failure = fromServer.statusCode
                     return body
                 }
             }
-            if (resp instanceof Map && 'errorMessage' in resp) {
-                throw new ServerException(resp['errorMessage'])
+            if (failure) {
+                if (resp instanceof Map && 'errorMessage' in resp) {
+                    throw new ServerException(resp['errorMessage'])
+                }
+                throw new ServerException("HTTP error ${failure}")
             }
 
             if (authNeeded) {
