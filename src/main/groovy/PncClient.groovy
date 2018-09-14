@@ -127,6 +127,7 @@ class PncClient {
         // More than one may be required in any combination of these cases:
         //   - API requests authentication
         //   - API returns paginated data
+        def stuffWritten = false
         def authNeeded = false
         def pagesPending = false
         def pageStitch = false
@@ -177,12 +178,17 @@ class PncClient {
                     json = JsonOutput.prettyPrint(JsonOutput.toJson(resp))
                     pagesPending = false
                 }
+                stuffWritten = true
                 output.write(json)
                 output.flush()
             }
             return authNeeded || pagesPending
         }
         while (makeRequests()) continue
+        if (stuffWritten) {
+            output.write('\n')
+            output.flush()
+        }
     }
 
     //
