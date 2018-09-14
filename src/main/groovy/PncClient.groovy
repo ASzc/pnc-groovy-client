@@ -131,7 +131,9 @@ class PncClient {
         def authNeeded = false
         def pagesPending = false
         def pageStitch = false
+        def serverErrors = 0
         def makeRequests = {
+            def retry = false
             def failure = null
             def resp = http.get {
                 request.uri.path = path
@@ -143,7 +145,18 @@ class PncClient {
                 }
 
                 response.failure { fromServer, body ->
-                    failure = fromServer.statusCode
+                    // Retry on server errors
+                    if (fromServer.statusCode.intdiv(100) == 5) {
+                        serverErrors++
+                        // Give up after several attempts
+                        if (serverErrors > 4) {
+                            failure = fromServer.statusCode
+                        } else {
+                            retry = true
+                        }
+                    } else {
+                        failure = fromServer.statusCode
+                    }
                     return body
                 }
             }
@@ -152,6 +165,12 @@ class PncClient {
                     throw new ServerException(resp['errorMessage'])
                 }
                 throw new ServerException("HTTP error ${failure}")
+            }
+            if (retry) {
+                sleep(10 ** serverErrors)
+                return true
+            } else {
+                serverErrors = 0
             }
 
             if (authNeeded) {
