@@ -476,7 +476,7 @@ class PncClient {
     }
 
     private static OptionAccessor parse(cli, args, positionals=0) {
-        cli.width = consoleWidth()
+        cli.width = consoleWidth() - 3
         cli.writer = consoleWriter()
         cli.expandArgumentFiles = false
         if (positionals != -1) { cli.stopAtNonOption = false }
@@ -504,8 +504,7 @@ class PncClient {
                     group      The group name of the endpoint
                     operation  The operation name of the endpoint
 
-                   optional arguments:
-                   """.stripIndent(),
+                   optional arguments:""".stripIndent(),
         )
         cli.with {
             h longOpt: 'help',
@@ -526,8 +525,7 @@ class PncClient {
 
                    positional arguments:
 
-                   optional arguments:
-                   """.stripIndent(),
+                   optional arguments:""".stripIndent(),
         )
         cli.with {
             h longOpt: 'help',
@@ -553,8 +551,7 @@ class PncClient {
                      call    Use server API endpoint
                      list    Print information on server API endpoints
 
-                   optional arguments:
-                   """.stripIndent(),
+                   optional arguments:""".stripIndent(),
         )
         cli.with {
             h longOpt: 'help',
