@@ -2,6 +2,28 @@
 
 A minimal [Newcastle](https://github.com/project-ncl/pnc) REST API Client written in Groovy.
 
+## Overview
+
+### Features
+
+- Always has the latest operations (swagger API data processed at runtime)
+- Read-only queries do not require authentication
+- Transparent pagination (pages are detected, fetched, and unpacked for you)
+- Optional CLI
+  - debugging
+  - shell scripts
+  - discovering new API operations
+  - generally conforms to POSIX CLI conventions
+
+### TODO
+
+- Authentication (use for all non-idempotent operations)
+- Body parameters (used for some non-idempotent operations)
+  - Model mapping
+  - Construction arguments
+- First release to maven central
+- RPMs
+
 ## Usage
 
 ### CLI
