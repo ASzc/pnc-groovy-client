@@ -145,6 +145,11 @@ class PncClient {
         // TODO Not implemented
         assert !bodyParams
 
+        // Output helper
+        def jsonOut = { data ->
+            JsonOutput.prettyPrint(JsonOutput.toJson(data))
+        }
+
         // Make at least one HTTP request.
         // More than one may be required in any combination of these cases:
         //   - API requests authentication
@@ -202,7 +207,7 @@ class PncClient {
                 def json
                 if (paginated) {
                     pagesPending = (resp['totalPages'] - 1) > resp['pageIndex']
-                    json = JsonOutput.prettyPrint(JsonOutput.toJson(resp['content']))
+                    json = jsonOut(resp['content'])
 
                     // Strip characters so the pages can be stitched together
                     if (pagesPending) {
@@ -220,8 +225,11 @@ class PncClient {
                         json = json[1..-1]
                         pageStitch = false
                     }
+                } else if (resp.size() == 1 && resp['content']) {
+                    // Schemas nested in an empty object
+                    json = jsonOut(resp['content'])
                 } else {
-                    json = JsonOutput.prettyPrint(JsonOutput.toJson(resp))
+                    json = jsonOut(resp)
                     pagesPending = false
                 }
                 stuffWritten = true
