@@ -505,7 +505,7 @@ class PncClient {
     }
 
     private static OptionAccessor parse(cli, args, positionals=0) {
-        cli.width = consoleWidth() - 3
+        cli.width = consoleWidth() - 4
         cli.writer = consoleWriter()
         cli.expandArgumentFiles = false
         if (positionals != -1) { cli.stopAtNonOption = false }
