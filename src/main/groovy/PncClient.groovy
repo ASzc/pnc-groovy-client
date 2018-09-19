@@ -27,7 +27,7 @@ class PncClient {
      * @param cache If false, disable caching. If a File, use that directory as
      * the cache directory. Otherwise use the default cache directory.
      */
-    PncClient(String apiUrl, cache=null) {
+    PncClient(String apiUrl, cache=false) {
         this.http = HttpBuilder.configure {
             request.uri = apiUrl
             request.contentType = ContentTypes.JSON[0]
@@ -618,14 +618,18 @@ class PncClient {
             if (!options) { return 1 }
             //console.println(">> ${options.arguments()}")
 
-            def pncUrl
+            def pncClient
             def readConfig = { ->
                 Properties config = readConfig()
                 if (!config.getProperty('pnc.url')) {
                     console.println('error: Setting pnc.url is missing from the config file')
                     return 4
                 }
-                pncUrl = config.getProperty('pnc.url')
+                def pncUrl = config.getProperty('pnc.url')
+                pncClient = new PncClient(
+                    apiUrl: config.getProperty('pnc.url'),
+                    cache: config.getProperty('cache'),
+                )
             }
 
             String subcommand = options.arguments()[0]
@@ -646,7 +650,7 @@ class PncClient {
                     readConfig()
 
                     try {
-                        new PncClient(pncUrl).execStream(
+                        pncClient.execStream(
                             group,
                             operation,
                             new PrintWriter(System.out),
@@ -667,7 +671,7 @@ class PncClient {
                     readConfig()
 
                     System.out.print(
-                        new PncClient(pncUrl).formatListing(
+                        pncClient.formatListing(
                             suboptions.e ?: /.*/,
                             consoleWidth(),
                             (suboptions.vs ?: []).size(),
