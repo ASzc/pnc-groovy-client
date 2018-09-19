@@ -16,6 +16,7 @@ class PncClient {
 
     private HttpBuilder http
     private LinkedHashMap apiData
+    private Auth auth
 
     /**
      * Prepare a client to operate against the PNC REST API, by preprocessing
@@ -24,40 +25,27 @@ class PncClient {
      * @param apiUrl The URL to swagger.json, within the REST API, including
      * scheme, host, and path. Example:
      * http://pnc.example.com/pnc-rest/rest/swagger.json
-     * @param cache If false, disable caching. If a File, use that directory as
-     * the cache directory. Otherwise use the default cache directory.
+     * @param cache If null, disable caching of swagger data. If a File, use
+     * that directory as the cache directory.
+     * @param auth If null, disable authentication. Otherwise, use this to
+     * perform authentication if the API requests it.
      */
-    PncClient(String apiUrl, cache=false) {
+    PncClient(String apiUrl, File cache=null, Auth auth=null) {
+        this.auth = auth
+
         this.http = HttpBuilder.configure {
             request.uri = apiUrl
             request.contentType = ContentTypes.JSON[0]
         }
 
-        def cacheDir
-        if (cache == false) {
-            cacheDir = null
-        } else if (cache instanceof File) {
-            cacheDir = File
-        } else {
-            cacheDir = System.getenv()['PGC_CACHE'] ?:
-                           (System.getProperty("user.home") + "/.cache/pgc")
-        }
-
         LinkedHashMap root
-        if (cacheDir != null) {
-            cacheDir = new File(cacheDir)
-            cacheDir.mkdirs()
-            File swaggerCache = new File(cacheDir, "${sha256(apiUrl)}.json")
+        if (cache != null) {
+            File swaggerCache = new File(cache, "${sha256(apiUrl)}.json")
             if (!swaggerCache.exists()) {
+                cache.mkdirs()
                 this.http.get { Download.toFile(delegate, swaggerCache) }
             }
             root = new JsonSlurper().parse(swaggerCache)
-            // In theory the processed data could be cached too, but it doesn't
-            // take a perceptible amount of time to process, so will leave that
-            // to later, if the general groovy boot time can be improved.
-            // Caching the processed data is more complicated because it has
-            // recursive links, can't be done with json.
-            // https://stackoverflow.com/a/38882383
         } else {
             root = this.http.get { }
         }
@@ -155,19 +143,33 @@ class PncClient {
         //   - API requests authentication
         //   - API returns paginated data
         def stuffWritten = false
-        def authNeeded = false
         def pagesPending = false
         def pageStitch = false
         def serverErrors = 0
+        def authErrors = 0
         def makeRequests = {
+            def authNeeded = false
             def retry = false
             def failure = null
             def resp = http.get {
                 request.uri.path = path
                 request.uri.query = queryParams
 
+                if (auth != null && auth.accessToken) {
+                    if (authErrors < 1) {
+                        // If the first token refresh failed, try without an
+                        // Authorization header, as the API may be rejecting
+                        // old credentials without needing to.
+                        request.headers['Authorization'] = "Bearer ${auth.accessToken}"
+                    }
+                }
+
                 response.when(401) { fromServer, body ->
-                    authNeeded = false
+                    authNeeded = true
+                    authErrors++
+                    if (authErrors > 2) {
+                        failure = fromServer.statusCode
+                    }
                     return body
                 }
 
@@ -193,6 +195,14 @@ class PncClient {
                 }
                 throw new ServerException("HTTP error ${failure}")
             }
+            if (authNeeded) {
+                if (auth == null) {
+                    throw new AuthException("Authentication is required but" +
+                    "unavailable. Try running pgc login?")
+                }
+                auth.refresh()
+                return true
+            }
             if (retry) {
                 sleep(10 ** serverErrors)
                 return true
@@ -200,43 +210,38 @@ class PncClient {
                 serverErrors = 0
             }
 
-            if (authNeeded) {
-                // TODO, auth with the keycloak realm
-                assert false
-            } else {
-                def json
-                if (paginated) {
-                    pagesPending = (resp['totalPages'] - 1) > resp['pageIndex']
-                    json = jsonOut(resp['content'])
+            def json
+            if (paginated) {
+                pagesPending = (resp['totalPages'] - 1) > resp['pageIndex']
+                json = jsonOut(resp['content'])
 
-                    // Strip characters so the pages can be stitched together
-                    if (pagesPending) {
-                        if (pageStitch) {
-                            // Middle page, remove array open and close
-                            json = json[1..-3] + ',\n'
-                        } else {
-                            // First page, remove array close
-                            json = json[0..-3] + ',\n'
-                            pageStitch = true
-                        }
-                        queryParams['pageIndex'] = resp['pageIndex'] + 1
-                    } else if (pageStitch) {
-                        // Last page, remove array open
-                        json = json[1..-1]
-                        pageStitch = false
+                // Strip characters so the pages can be stitched together
+                if (pagesPending) {
+                    if (pageStitch) {
+                        // Middle page, remove array open and close
+                        json = json[1..-3] + ',\n'
+                    } else {
+                        // First page, remove array close
+                        json = json[0..-3] + ',\n'
+                        pageStitch = true
                     }
-                } else if (resp.size() == 1 && resp['content']) {
-                    // Schemas nested in an empty object
-                    json = jsonOut(resp['content'])
-                } else {
-                    json = jsonOut(resp)
-                    pagesPending = false
+                    queryParams['pageIndex'] = resp['pageIndex'] + 1
+                } else if (pageStitch) {
+                    // Last page, remove array open
+                    json = json[1..-1]
+                    pageStitch = false
                 }
-                stuffWritten = true
-                output.write(json)
-                output.flush()
+            } else if (resp.size() == 1 && resp['content']) {
+                // Schemas nested in an empty object
+                json = jsonOut(resp['content'])
+            } else {
+                json = jsonOut(resp)
+                pagesPending = false
             }
-            return authNeeded || pagesPending
+            stuffWritten = true
+            output.write(json)
+            output.flush()
+            return pagesPending
         }
         while (makeRequests()) continue
         if (stuffWritten) {
@@ -577,16 +582,36 @@ class PncClient {
         return cli
     }
 
+    private static CliBuilder commandLogin() {
+        def cli = new CliBuilder(
+            usage:'pgc login [-c]',
+            header:"""
+                   Interactively ask for the credentials, then store tokens for future use after authenticating with the server.
+
+                   positional arguments:
+
+                   optional arguments:""".stripIndent(),
+        )
+        cli.with {
+            h longOpt: 'help',
+              'Show usage information'
+            c longOpt: 'client',
+              'Authenticate for a client instead of a user'
+        }
+        return cli
+    }
+
     private static CliBuilder commandRoot() {
         def cli = new CliBuilder(
-            usage:'pgc [-d] {call,list}',
+            usage:'pgc [-d] {login,call,list}',
             header:"""
                    PNC Groovy Client, a CLI for the PNC REST API.
 
                    See the individual help messages of each subcommand for more information.
 
                    subcommand arguments:
-                    {call,list}
+                    {login,call,list}
+                     login   Authenticate for those operations that need it
                      call    Use server API endpoint
                      list    Print information on server API endpoints
 
@@ -601,13 +626,19 @@ class PncClient {
         return cli
     }
 
-    private static Properties readConfig(File config=null) {
-        config = config ?: new File(System.getenv()['PGC_CONFIG'] ?: (System.getProperty("user.home") + '/.config/pgc.properties'))
-        Properties props = new Properties()
-        if (config.exists()) {
-            props.load(config.newDataInputStream())
+    private static File homeFile(String override, String envKey, String path) {
+        def ret
+        if (override != null) {
+            ret = override
+        } else {
+            def env = System.getenv()["PGC_${envKey}"]
+            if (env != null) {
+                ret = env
+            } else {
+                ret = System.getProperty("user.home") + "/${path}".replace('/', File.separator)
+            }
         }
-        return props
+        return new File(ret)
     }
 
     static Integer cli(args) {
@@ -618,17 +649,32 @@ class PncClient {
             if (!options) { return 1 }
             //console.println(">> ${options.arguments()}")
 
-            def pncClient
+            Properties config
+            File cacheDir
             def readConfig = { ->
-                Properties config = readConfig()
-                if (!config.getProperty('pnc.url')) {
-                    console.println('error: Setting pnc.url is missing from the config file')
-                    return 4
+                def configPath = homeFile(null, 'CONFIG', '.config/pgc.properties')
+                config = new Properties()
+                if (configPath.exists()) {
+                    config.load(configPath.newDataInputStream())
                 }
-                def pncUrl = config.getProperty('pnc.url')
+                cacheDir = homeFile(config['cache'], 'CACHE', ".cache/pgc")
+            }
+            def configMissing = { id ->
+                if (!config[id]) {
+                    console.println("error: Setting ${id} is missing from the config file")
+                    return true
+                }
+                return false
+            }
+
+            def pncClient
+            def constructPncClient = { readOnly ->
+                if (configMissing('pnc.url')) { return 4 }
+
                 pncClient = new PncClient(
-                    apiUrl: config.getProperty('pnc.url'),
-                    cache: config.getProperty('cache'),
+                    config['pnc.url'],
+                    cacheDir,
+                    readOnly ? null : Auth.retrieve(cacheDir),
                 )
             }
 
@@ -648,6 +694,7 @@ class PncClient {
                     def callArgs = suboptions.as
 
                     readConfig()
+                    constructPncClient(false)
 
                     try {
                         pncClient.execStream(
@@ -662,6 +709,9 @@ class PncClient {
                     } catch (ServerException e) {
                         console.println(e.message)
                         return 6
+                    } catch (AuthException e) {
+                        console.println(e.message)
+                        return 7
                     }
                     break
                 case 'list':
@@ -669,6 +719,7 @@ class PncClient {
                     if (!suboptions) { return 3 }
 
                     readConfig()
+                    constructPncClient(true)
 
                     System.out.print(
                         pncClient.formatListing(
@@ -677,6 +728,61 @@ class PncClient {
                             (suboptions.vs ?: []).size(),
                         )
                     )
+                    break
+                case 'login':
+                    def suboptions = parse(commandLogin(), subargs)
+                    if (!suboptions) { return 3 }
+
+                    readConfig()
+
+                    if (configMissing('auth.url')) { return 4 }
+                    if (configMissing('auth.realm')) { return 4 }
+
+                    def reader = null
+                    def prompt = { name, disableEcho ->
+                        def p = "${name}: "
+                        def sysConsole = System.console()
+                        String line
+                        if (sysConsole == null) {
+                            reader = reader ?: System.in.newReader()
+                            line = reader.readLine()
+                        } else {
+                            if (disableEcho) {
+                                line = sysConsole.readPassword(p)
+                            } else {
+                                line = sysConsole.readLine(p)
+                            }
+                        }
+                        return line.trim()
+                    }
+                    if (reader) {
+                        reader.close()
+                    }
+
+                    try {
+                        if (suboptions.c) {
+                            Auth.store(
+                                config['auth.url'],
+                                config['auth.realm'],
+                                Auth.Grant.CLIENT,
+                                prompt('Client ID', false),
+                                prompt('Client Secret', true),
+                                cacheDir,
+                            )
+                        } else {
+                            Auth.store(
+                                config['auth.url'],
+                                config['auth.realm'],
+                                Auth.Grant.USER,
+                                prompt('Username', false),
+                                prompt('Password', true),
+                                cacheDir,
+                            )
+                        }
+                    } catch (AuthException e) {
+                        console.println("Unable to authenticate: ${e.message}")
+                        return 7
+                    }
                     break
                 default:
                     console.println("error: Unknown subcommand ${subcommand}")

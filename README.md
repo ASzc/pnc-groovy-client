@@ -9,6 +9,7 @@ A minimal [Newcastle](https://github.com/project-ncl/pnc) REST API Client writte
 - Always has the latest operations (swagger API data processed at runtime)
 - Read-only queries do not require authentication
 - Transparent pagination (pages are detected, fetched, and unpacked for you)
+- Authentication
 - Optional CLI
   - debugging
   - shell scripts
@@ -17,7 +18,6 @@ A minimal [Newcastle](https://github.com/project-ncl/pnc) REST API Client writte
 
 ### TODO
 
-- Authentication (use for all non-idempotent operations)
 - Body parameters (used for some non-idempotent operations)
   - Model mapping
   - Construction arguments

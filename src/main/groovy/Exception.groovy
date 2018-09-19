@@ -11,3 +11,6 @@ class ModelCoerceException extends Exception {}
 
 @InheritConstructors
 class ServerException extends Exception {}
+
+@InheritConstructors
+class AuthException extends Exception {}
