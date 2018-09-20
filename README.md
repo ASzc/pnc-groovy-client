@@ -29,7 +29,7 @@ A minimal [Newcastle](https://github.com/project-ncl/pnc) REST API Client writte
 ### CLI
 
 ```bash
-alias pgc='java -jar target/pnc-groovy-client-1.0.0-SNAPSHOT-executable.jar'
+alias pgc='java -jar cli/target/pnc-groovy-cli-1.0.0-SNAPSHOT-executable.jar'
 echo 'pnc.url=http://orch.example.com/pnc-rest/rest/swagger.json' > $HOME/.config/pgc.properties
 pgc -h
 pgc list -h
