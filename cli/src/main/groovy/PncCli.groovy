@@ -11,14 +11,9 @@ class PncCli {
         "tput cols".execute().text as Integer
     }
 
-    @Memoized
-    private static PrintWriter consoleWriter() {
-        new PrintWriter(System.err)
-    }
-
-    private static OptionAccessor parse(cli, args, positionals=0) {
+    private static OptionAccessor parse(cli, args, console, positionals=0) {
         cli.width = consoleWidth() - 4
-        cli.writer = consoleWriter()
+        cli.writer = console
         cli.expandArgumentFiles = false
         if (positionals != -1) { cli.stopAtNonOption = false }
         def options = cli.parse(args)
@@ -140,11 +135,11 @@ class PncCli {
         return new File(ret)
     }
 
-    static Integer cli(args) {
-        PrintWriter console = consoleWriter()
+    static Integer cli(args, PrintWriter console=null) {
+        console = console ?: new PrintWriter(System.err)
         try {
             def cli = commandRoot()
-            def options = parse(cli, args, -1)
+            def options = parse(cli, args, console, -1)
             if (!options) { return 1 }
             //console.println(">> ${options.arguments()}")
 
@@ -181,7 +176,7 @@ class PncCli {
             def subargs = options.arguments().drop(1)
             switch (subcommand) {
                 case 'call':
-                    def suboptions = parse(commandCall(), subargs, 2)
+                    def suboptions = parse(commandCall(), subargs, console, 2)
                     if (!suboptions) { return 3 }
 
                     // Positional args -> method coordinates
@@ -214,7 +209,7 @@ class PncCli {
                     }
                     break
                 case 'list':
-                    def suboptions = parse(commandList(), subargs)
+                    def suboptions = parse(commandList(), subargs, console)
                     if (!suboptions) { return 3 }
 
                     readConfig()
@@ -229,7 +224,7 @@ class PncCli {
                     )
                     break
                 case 'login':
-                    def suboptions = parse(commandLogin(), subargs)
+                    def suboptions = parse(commandLogin(), subargs, console)
                     if (!suboptions) { return 3 }
 
                     readConfig()
@@ -294,7 +289,7 @@ class PncCli {
         return 0
     }
 
-    static void main(String... args) {
-        System.exit(PncClient.cli(args))
+    static void main(args) {
+        System.exit(PncCli.cli(args))
     }
 }
