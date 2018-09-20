@@ -135,21 +135,32 @@ class PncCli {
         return new File(ret)
     }
 
-    static Integer cli(args, PrintWriter console=null) {
+    static Integer cli(
+        args,
+        PrintWriter console=null,
+        PrintWriter dataOutput=null,
+        Map<String,String> configOverride=null
+    ) {
         console = console ?: new PrintWriter(System.err)
+        dataOutput = dataOutput ?: new PrintWriter(System.out)
         try {
             def cli = commandRoot()
             def options = parse(cli, args, console, -1)
             if (!options) { return 1 }
             //console.println(">> ${options.arguments()}")
 
-            Properties config
+            Map<String, String> config
             File cacheDir
             def readConfig = { ->
-                def configPath = homeFile(null, 'CONFIG', '.config/pgc.properties')
-                config = new Properties()
-                if (configPath.exists()) {
-                    config.load(configPath.newDataInputStream())
+                if (configOverride) {
+                    config = configOverride
+                } else {
+                    def configPath = homeFile(null, 'CONFIG', '.config/pgc.properties')
+                    def c = new Properties()
+                    if (configPath.exists()) {
+                        c.load(configPath.newDataInputStream())
+                    }
+                    config = c
                 }
                 cacheDir = homeFile(config['cache'], 'CACHE', ".cache/pgc")
             }
@@ -194,7 +205,7 @@ class PncCli {
                         pncClient.execStream(
                             group,
                             operation,
-                            new PrintWriter(System.out),
+                            dataOutput,
                             callArgs,
                         )
                     } catch (ModelCoerceException e) {
@@ -215,7 +226,7 @@ class PncCli {
                     readConfig()
                     constructPncClient(true)
 
-                    System.out.print(
+                    dataOutput.print(
                         pncClient.formatListing(
                             suboptions.e ?: /.*/,
                             consoleWidth(),
@@ -285,6 +296,7 @@ class PncCli {
             }
         } finally {
             console.flush()
+            dataOutput.flush()
         }
         return 0
     }
