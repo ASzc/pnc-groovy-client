@@ -19,32 +19,37 @@ class PncClient {
      * Prepare a client to operate against the PNC REST API, by preprocessing
      * the swagger data published by that API.
      *
-     * @param apiUrl The URL to swagger.json, within the REST API, including
-     * scheme, host, and path. Example:
+     * @param api If a File, read the swagger data from there. Otherwise must
+     * be the String URL to swagger.json within the REST API, including scheme,
+     * host, and path. Example:
      * http://pnc.example.com/pnc-rest/rest/swagger.json
      * @param cache If null, disable caching of swagger data. If a File, use
      * that directory as the cache directory.
      * @param auth If null, disable authentication. Otherwise, use this to
      * perform authentication if the API requests it.
      */
-    PncClient(String apiUrl, File cache=null, Auth auth=null) {
+    PncClient(api, File cache=null, Auth auth=null) {
         this.auth = auth
 
-        this.http = HttpBuilder.configure {
-            request.uri = apiUrl
-            request.contentType = ContentTypes.JSON[0]
-        }
-
         LinkedHashMap root
-        if (cache != null) {
-            File swaggerCache = new File(cache, "${sha256(apiUrl)}.json")
-            if (!swaggerCache.exists()) {
-                cache.mkdirs()
-                this.http.get { Download.toFile(delegate, swaggerCache) }
-            }
-            root = new JsonSlurper().parse(swaggerCache)
+        if (api instanceof File) {
+            root = new JsonSlurper().parse(api)
         } else {
-            root = this.http.get { }
+            this.http = HttpBuilder.configure {
+                request.uri = api
+                request.contentType = ContentTypes.JSON[0]
+            }
+
+            if (cache != null) {
+                File swaggerCache = new File(cache, "${sha256(api)}.json")
+                if (!swaggerCache.exists()) {
+                    cache.mkdirs()
+                    this.http.get { Download.toFile(delegate, swaggerCache) }
+                }
+                root = new JsonSlurper().parse(swaggerCache)
+            } else {
+                root = this.http.get { }
+            }
         }
 
         this.apiData = swaggerData(root)
@@ -60,7 +65,7 @@ class PncClient {
      * @return Parsed json data, or null if the method returns nothing.
      */
     def exec(String group, String operation, Map kwargs=[:]) {
-        rawOutput = new StringWriter()
+        def rawOutput = new StringWriter()
         execStream(group, operation, rawOutput, kwargs)
         return new JsonSlurper().parseText(rawOutput.toString())
     }
@@ -148,7 +153,7 @@ class PncClient {
             def authNeeded = false
             def retry = false
             def failure = null
-            def resp = http.get {
+            def resp = http."${method['method']}" {
                 request.uri.path = path
                 request.uri.query = queryParams
 
@@ -259,6 +264,10 @@ class PncClient {
         s.replaceAll(/\B[A-Z]/) { '-' + it }.toLowerCase()
     }
 
+    private static String camelCase(String s) {
+        s.replaceAll(/-\w/){ it[1].toUpperCase() }
+    }
+
     private static String wordWrap(text, length=80, start=0) {
         length = length - start
 
@@ -325,19 +334,24 @@ class PncClient {
                             refName = content['additionalProperties']['type']
                             refType = null
                             refMultiple = null
-                        } else if (content['items']['enum']) {
+                        } else if (content['type'] == 'object' && content.size() == 1) {
+                            // Non-descript object
+                            refName = content['type']
+                            refType = null
+                            refMultiple = null
+                        } else if (content['items'] && content['items']['enum']) {
                             // Enum singleton
                             refName = "enum"
                             refType = content['enum']
                             refMultiple = null
-                        } else if (content['items']['$ref']) {
+                        } else if (content['items'] && content['items']['$ref']) {
                             // Page
                             refName = extractRef(content['items']['$ref'])
                             refType = resolveRef(refName)
                             refMultiple = content['type']
                         } else {
                             throw new RuntimeException(
-                                "Don't know how to handle data in ${key}"
+                                "Don't know how to handle nested schema data in ${key}"
                             )
                         }
                     } else {
@@ -380,9 +394,11 @@ class PncClient {
         root['paths'].each { path, pathData ->
             pathData.each { method, methodData ->
                 methodData['tags'].each { tag ->
+                    def tagCamel = camelCase(tag)
                     if (!pathMethodsByTag.containsKey(tag)) {
                         pathMethodsByTag[tag] = []
                         pathMethodsByTagAndId[tag] = [:]
+                        pathMethodsByTagAndId[tagCamel] = [:]
                     }
                     pathMethodsByTag[tag].add(methodData)
 
@@ -394,6 +410,9 @@ class PncClient {
                         // Add both camel case and dashed names to index
                         pathMethodsByTagAndId[tag][methodData['operationId']] = methodData
                         pathMethodsByTagAndId[tag][methodData['operationIdDashed']] = methodData
+                        // And add a camel case version of the tag with the same pointers
+                        pathMethodsByTagAndId[tagCamel][methodData['operationId']] = methodData
+                        pathMethodsByTagAndId[tagCamel][methodData['operationIdDashed']] = methodData
                     }
 
                     // Resolve $ref syntax for schemas

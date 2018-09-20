@@ -47,3 +47,21 @@ Map buildInfo = pnc.exec(
 )
 String pncVersion = buildInfo['executionRootVersion']
 ```
+
+## Development
+
+### Compile
+
+```bash
+mvn clean package
+```
+
+#### Unit Tests
+
+Unit tests are executed by default during compilation
+
+### Integration Tests
+
+```bash
+mvn clean package -Dintegration.pnc.host=pnc-orch-master-nightly.cloud.pnc.devel.example.com
+```
