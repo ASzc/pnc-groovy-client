@@ -1,5 +1,6 @@
 package ca.szc.groovy.pnc
 
+import groovy.transform.EqualsAndHashCode
 import groovy.util.logging.Slf4j
 
 import groovyx.net.http.ContentTypes
@@ -28,6 +29,7 @@ class Auth {
     // Serialize
     //
 
+    @EqualsAndHashCode
     static class AuthInfo implements Serializable {
         static final serialVersionUID = 7092186726994503341L
 
@@ -48,10 +50,13 @@ class Auth {
         }
     }
 
-    static final INFO_FILENAME = 'pgc-tokens.ser'
+    static String filename(String url) {
+        "${Misc.sha256(url)}.ser"
+    }
 
-    static void infoOut(File file, AuthInfo info) {
-        file = new File(file, INFO_FILENAME)
+    static void infoOut(File dir, AuthInfo info) {
+        dir.mkdirs()
+        def file = new File(dir, filename(info.url))
         log.debug("Writing auth tokens to ${file}")
         // Set mode 600. Should really set the mode atomically at file creation
         // time, but Java makes that awkward to do.
@@ -68,14 +73,19 @@ class Auth {
 
     }
 
-    static AuthInfo infoIn(File file) {
-        file = new File(file, INFO_FILENAME)
-        log.debug("Reading auth tokens from ${file}")
-        def info
-        file.withObjectInputStream { i ->
-            info = i.readObject()
+    static AuthInfo infoIn(File dir, String url) {
+        def file = new File(dir, filename(url))
+        if (file.exists()) {
+            log.debug("Reading auth tokens from ${file}")
+            def info
+            file.withObjectInputStream { i ->
+                info = i.readObject()
+            }
+            return info
+        } else {
+            log.debug("No auth tokens in cache ${dir} for url ${url}")
+            return null
         }
-        return info
     }
 
     //
@@ -152,14 +162,15 @@ class Auth {
         Auth.infoOut(cache, auth.info)
     }
 
-    static Auth retrieve(File cache) {
-        def authFile = new File(cache, INFO_FILENAME)
-        if (authFile.exists()) {
-            new Auth(Auth.infoIn(cache))
-        } else {
-            log.debug("No auth token file in cache ${cache}")
+    static Auth retrieve(File cache, String url) {
+        if (!url) {
             return null
         }
+        def info = Auth.infoIn(cache, url)
+        if (!info) {
+            return null
+        }
+        return new Auth(info)
     }
 
     //

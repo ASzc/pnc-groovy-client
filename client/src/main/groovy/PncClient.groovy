@@ -4,8 +4,6 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import groovy.util.logging.Slf4j
 
-import java.security.MessageDigest
-
 import groovyx.net.http.ContentTypes
 import groovyx.net.http.optional.Download
 import groovyx.net.http.HttpBuilder
@@ -46,7 +44,7 @@ class PncClient {
             }
 
             if (cache != null) {
-                File swaggerCache = new File(cache, "${sha256(api)}.json")
+                File swaggerCache = new File(cache, "${Misc.sha256(api)}.json")
                 if (!swaggerCache.exists()) {
                     log.debug("Downloading API data to cache ${swaggerCache}")
                     cache.mkdirs()
@@ -284,38 +282,6 @@ class PncClient {
     }
 
     //
-    // Misc
-    //
-
-    private static String sha256(String s) {
-        MessageDigest.getInstance("SHA-256").digest(s.bytes).encodeHex().toString()
-    }
-
-    private static String dashSeparated(String s) {
-        s.replaceAll(/\B[A-Z]/) { '-' + it }.toLowerCase()
-    }
-
-    private static String camelCase(String s) {
-        s.replaceAll(/-\w/){ it[1].toUpperCase() }
-    }
-
-    private static String wordWrap(text, length=80, start=0) {
-        length = length - start
-
-        def sb = new StringBuilder()
-        def line = ''
-
-        text.split(/\s/).each { word ->
-            if (line.size() + word.size() > length) {
-                sb.append(line.trim()).append('\n').append(' ' * start)
-                line = ''
-            }
-            line += " $word"
-        }
-        sb.append(line.trim()).toString()
-    }
-
-    //
     // Model
     //
 
@@ -424,7 +390,7 @@ class PncClient {
         root['paths'].each { path, pathData ->
             pathData.each { method, methodData ->
                 methodData['tags'].each { tag ->
-                    def tagCamel = camelCase(tag)
+                    def tagCamel = Misc.camelCase(tag)
                     if (!pathMethodsByTag.containsKey(tag)) {
                         pathMethodsByTag[tag] = []
                         pathMethodsByTagAndId[tag] = [:]
@@ -435,7 +401,7 @@ class PncClient {
                     // Add in some ease-of-use data too
                     methodData['path'] = path
                     methodData['method'] = method
-                    methodData['operationIdDashed'] = dashSeparated(methodData['operationId'])
+                    methodData['operationIdDashed'] = Misc.dashSeparated(methodData['operationId'])
                     if (!pathMethodsByTagAndId[tag].containsKey(methodData['operationId'])) {
                         // Add both camel case and dashed names to index
                         pathMethodsByTagAndId[tag][methodData['operationId']] = methodData
@@ -514,7 +480,7 @@ class PncClient {
                             out << '+'
                         }
                         out << ') '
-                        out << wordWrap(
+                        out << Misc.wordWrap(
                             data['description'] ?: 'No description provided',
                             maxLength,
                             // Measure the length of the initial line info so we
