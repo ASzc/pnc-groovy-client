@@ -250,11 +250,23 @@ class PncCli {
         def constructPncClient = { readOnly ->
             if (configMissing('pnc.url')) { return 4 }
 
+            def auth
+            if (readOnly) {
+                auth = null
+            } else {
+                auth = Auth.retrieve(cacheDir)
+                if (config['auth.url'] != auth.info.url) {
+                    console.println("error: auth.url does not match the stored authentication tokens, re-run `pgc login` first")
+                    return 7
+                }
+            }
+
             pncClient = new PncClient(
                 config['pnc.url'],
                 cacheDir,
-                readOnly ? null : Auth.retrieve(cacheDir),
+                auth,
             )
+            return 0
         }
 
         String subcommand = options.arguments()[0]
@@ -273,7 +285,8 @@ class PncCli {
                 def callArgs = suboptions.as
 
                 readConfig()
-                constructPncClient(false)
+                def code = constructPncClient(false)
+                if (code > 0) { println code; return code }
 
                 try {
                     pncClient.execStream(
@@ -298,7 +311,8 @@ class PncCli {
                 if (!suboptions) { return 3 }
 
                 readConfig()
-                constructPncClient(true)
+                def code = constructPncClient(true)
+                if (code > 0) { return code }
 
                 dataOutput.print(
                     pncClient.formatListing(

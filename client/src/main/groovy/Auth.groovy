@@ -1,9 +1,12 @@
 package ca.szc.groovy.pnc
 
+import groovy.util.logging.Slf4j
+
 import groovyx.net.http.ContentTypes
 import groovyx.net.http.HttpBuilder
 import groovyx.net.http.NativeHandlers
 
+@Slf4j
 class Auth {
 
     //
@@ -48,6 +51,8 @@ class Auth {
     static final INFO_FILENAME = 'pgc-tokens.ser'
 
     static void infoOut(File file, AuthInfo info) {
+        file = new File(file, INFO_FILENAME)
+        log.debug("Writing auth tokens to ${file}")
         // Set mode 600. Should really set the mode atomically at file creation
         // time, but Java makes that awkward to do.
         file.createNewFile()
@@ -64,6 +69,8 @@ class Auth {
     }
 
     static AuthInfo infoIn(File file) {
+        file = new File(file, INFO_FILENAME)
+        log.debug("Reading auth tokens from ${file}")
         def info
         file.withObjectInputStream { i ->
             info = i.readObject()
@@ -83,6 +90,7 @@ class Auth {
         String secret,
         HttpBuilder http=null
     ) {
+        log.info("Getting initial authentication tokens")
         http = Auth.defaultHttp(http)
 
         def requestBody
@@ -104,11 +112,9 @@ class Auth {
             clientId = name
         }
 
-        url = "${url}/auth/realms/${realm}/protocol/openid-connect/token"
-
         def failure = false
         def resp = http.post {
-            request.uri.full = url
+            request.uri.full = "${url}/auth/realms/${realm}/protocol/openid-connect/token"
 
             request.body = requestBody
             request.contentType = 'application/x-www-form-urlencoded'
@@ -143,21 +149,15 @@ class Auth {
         File cache
     ) {
         def auth = Auth.initial(url, realm, grant, name, secret)
-        Auth.infoOut(
-            new File(cache, INFO_FILENAME),
-            auth.info,
-        )
+        Auth.infoOut(cache, auth.info)
     }
 
     static Auth retrieve(File cache) {
         def authFile = new File(cache, INFO_FILENAME)
         if (authFile.exists()) {
-            new Auth(
-                Auth.infoIn(
-                    new File(cache, INFO_FILENAME),
-                ),
-            )
+            new Auth(Auth.infoIn(cache))
         } else {
+            log.debug("No auth token file in cache ${cache}")
             return null
         }
     }
@@ -174,7 +174,8 @@ class Auth {
         this.http = Auth.defaultHttp(http)
     }
 
-    void refresh() {
+    void refresh(File cache=null) {
+        log.info("Getting new access token using refresh token")
         def failure = false
         def resp = http.post {
             request.uri.full = info.url
@@ -202,6 +203,9 @@ class Auth {
             info.refreshToken,
             resp['access_token'],
         )
+        if (cache) {
+            Auth.infoOut(cache, this.info)
+        }
     }
 
     String getAccessToken() {

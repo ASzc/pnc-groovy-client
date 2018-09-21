@@ -16,6 +16,7 @@ class PncClient {
     private HttpBuilder http
     private LinkedHashMap apiData
     private Auth auth
+    private File cacheDir
 
     /**
      * Prepare a client to operate against the PNC REST API, by preprocessing
@@ -25,13 +26,14 @@ class PncClient {
      * be the String URL to swagger.json within the REST API, including scheme,
      * host, and path. Example:
      * http://pnc.example.com/pnc-rest/rest/swagger.json
-     * @param cache If null, disable caching of swagger data. If a File, use
-     * that directory as the cache directory.
+     * @param cache If null, disable caching of swagger data and authentication
+     * tokens. If a File, use that directory as the cache directory.
      * @param auth If null, disable authentication. Otherwise, use this to
      * perform authentication if the API requests it.
      */
     PncClient(api, File cache=null, Auth auth=null) {
         this.auth = auth
+        this.cacheDir = cache
 
         LinkedHashMap root
         if (api instanceof File) {
@@ -164,14 +166,21 @@ class PncClient {
                 request.uri.path = path
                 request.uri.query = queryParams
 
-                if (auth != null && auth.accessToken) {
+                if (auth != null && auth.accessToken != null) {
                     if (authErrors <= 1) {
+                        log.debug("Trying request with authentication")
+                        request.headers['Authorization'] = "Bearer ${auth.accessToken}"
+                    } else {
                         // If the first token refresh failed, try without an
                         // Authorization header, as the API may be rejecting
                         // old credentials without needing to.
-                        request.headers['Authorization'] = "Bearer ${auth.accessToken}"
+                        log.warn("Reauth unsuccessful, retrying without authentication")
+                    }
+                } else {
+                    if (auth == null) {
+                        log.debug("Trying request without authentication, null access token")
                     } else {
-                        log.warn("Reauth unsuccessful, trying as an anonymous call")
+                        log.debug("Trying request without authentication, auth disabled")
                     }
                 }
 
@@ -216,7 +225,7 @@ class PncClient {
                     "unavailable. Try running pgc login?")
                 }
                 if (authErrors <= 1) {
-                    auth.refresh()
+                    auth.refresh(cacheDir)
                 }
                 return true
             }
