@@ -14,6 +14,7 @@ A minimal [Newcastle](https://github.com/project-ncl/pnc) REST API Client writte
   - debugging
   - shell scripts
   - discovering new API operations
+  - allows multiple PNC instances to be accessed from one config file (using `--config-prefix`)
   - generally conforms to POSIX CLI conventions
 
 ### TODO
