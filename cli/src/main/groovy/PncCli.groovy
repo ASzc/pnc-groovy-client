@@ -165,7 +165,7 @@ class PncCli {
 
     private static CliBuilder commandRoot() {
         def cli = new CliBuilder(
-            usage:'pgc [-v] [-d] {login,call,list}',
+            usage:'pgc [-v] [-d] [-p PREFIX] {login,call,list}',
             header:"""
                    PNC Groovy Client, a CLI for the PNC REST API.
 
@@ -186,6 +186,10 @@ class PncCli {
               'Make logging more verbose. Can be used multiple times.'
             d longOpt: 'http-debug',
               'Make HTTP logging more verbose. Can be used multiple times.'
+            p longOpt: 'config-prefix',
+              args: 1,
+              argName: 'PREFIX',
+              'Prepend this string to all configuration keys before reading their values. Can be used to store entries for multiple PNC instances (ex: prod, stage, devel) in one config file. If there is no key with a given prefix, the unprefixed key will be read instead. Example, with prefix "devel": devel.auth.realm || auth.realm'
         }
         return cli
     }
@@ -225,6 +229,13 @@ class PncCli {
 
         Map<String, String> config
         File cacheDir
+        def getCfg = { key ->
+            if (options.p) {
+                return config["${options.p}.${key}"] ?: config[key]
+            } else {
+                return config[key]
+            }
+        }
         def readConfig = { ->
             if (configOverride) {
                 config = configOverride
@@ -236,10 +247,10 @@ class PncCli {
                 }
                 config = c
             }
-            cacheDir = homeFile(config['cache'], 'CACHE', ".cache/pgc")
+            cacheDir = homeFile(getCfg('cache'), 'CACHE', ".cache/pgc")
         }
         def configMissing = { id ->
-            if (!config[id]) {
+            if (!getCfg(id)) {
                 console.println("error: Setting ${id} is missing from the config file")
                 return true
             }
@@ -254,11 +265,11 @@ class PncCli {
             if (readOnly) {
                 auth = null
             } else {
-                auth = Auth.retrieve(cacheDir, config['auth.url'])
+                auth = Auth.retrieve(cacheDir, getCfg('auth.url'))
             }
 
             pncClient = new PncClient(
-                config['pnc.url'],
+                getCfg('pnc.url'),
                 cacheDir,
                 auth,
             )
@@ -354,8 +365,8 @@ class PncCli {
                 try {
                     if (suboptions.c) {
                         Auth.store(
-                            config['auth.url'],
-                            config['auth.realm'],
+                            getCfg('auth.url'),
+                            getCfg('auth.realm'),
                             Auth.Grant.CLIENT,
                             prompt('Client ID', false),
                             prompt('Client Secret', true),
@@ -363,8 +374,8 @@ class PncCli {
                         )
                     } else {
                         Auth.store(
-                            config['auth.url'],
-                            config['auth.realm'],
+                            getCfg('auth.url'),
+                            getCfg('auth.realm'),
                             Auth.Grant.USER,
                             prompt('Username', false),
                             prompt('Password', true),
