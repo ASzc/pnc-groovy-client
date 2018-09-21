@@ -293,7 +293,7 @@ class PncCli {
 
                 readConfig()
                 def code = constructPncClient(false)
-                if (code > 0) { println code; return code }
+                if (code > 0) { return code }
 
                 try {
                     pncClient.execStream(
