@@ -9,12 +9,12 @@ import spock.lang.*
 class CliIntegrationSpec extends Specification {
 
     def cli(String... args) {
-        def err = new StringWriter()
-        def out = new StringWriter()
+        def err = new ByteArrayOutputStream()
+        def out = new ByteArrayOutputStream()
         def code = PncCli.cli(
             args,
-            new PrintWriter(err),
-            new PrintWriter(out),
+            err,
+            out,
             [
                 'pnc.url': "http://${System.getProperty('integration.pnc.host')}/pnc-rest/rest/swagger.json",
                 cache: "/tmp/pgc-integration",

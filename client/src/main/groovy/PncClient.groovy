@@ -2,6 +2,7 @@ package ca.szc.groovy.pnc
 
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
+import groovy.util.logging.Slf4j
 
 import java.security.MessageDigest
 
@@ -9,6 +10,7 @@ import groovyx.net.http.ContentTypes
 import groovyx.net.http.optional.Download
 import groovyx.net.http.HttpBuilder
 
+@Slf4j
 class PncClient {
 
     private HttpBuilder http
@@ -33,6 +35,7 @@ class PncClient {
 
         LinkedHashMap root
         if (api instanceof File) {
+            log.debug("Reading API data from file ${api}")
             root = new JsonSlurper().parse(api)
         } else {
             this.http = HttpBuilder.configure {
@@ -43,11 +46,14 @@ class PncClient {
             if (cache != null) {
                 File swaggerCache = new File(cache, "${sha256(api)}.json")
                 if (!swaggerCache.exists()) {
+                    log.debug("Downloading API data to cache ${swaggerCache}")
                     cache.mkdirs()
                     this.http.get { Download.toFile(delegate, swaggerCache) }
                 }
+                log.debug("Reading API data from cache ${swaggerCache}")
                 root = new JsonSlurper().parse(swaggerCache)
             } else {
+                log.debug("Downloading API data from ${api}")
                 root = this.http.get { }
             }
         }
@@ -84,7 +90,7 @@ class PncClient {
     void execStream(String group, String operation, Writer output, Map kwargs=[:]) {
         def method = apiData['pathMethodsByTagAndId'][group][operation]
 
-        //println("${method['method']} ${method['path']} ${kwargs}")
+        log.info("Calling ${method['method']} ${method['path']} with ${kwargs}")
 
         // Allocate kwargs to where the method data says they each need to go
         def pathParams = []
@@ -113,6 +119,7 @@ class PncClient {
         // Detect pagination
         def paginated = false
         if ('pageIndex' in method['parametersByName']) {
+            log.debug("Operation is paginated")
             paginated = true
             assert method['parametersByName']['pageIndex']['in'] == 'query'
             queryParams['pageIndex'] = 0
@@ -158,18 +165,22 @@ class PncClient {
                 request.uri.query = queryParams
 
                 if (auth != null && auth.accessToken) {
-                    if (authErrors < 1) {
+                    if (authErrors <= 1) {
                         // If the first token refresh failed, try without an
                         // Authorization header, as the API may be rejecting
                         // old credentials without needing to.
                         request.headers['Authorization'] = "Bearer ${auth.accessToken}"
+                    } else {
+                        log.warn("Reauth unsuccessful, trying as an anonymous call")
                     }
                 }
 
                 response.when(401) { fromServer, body ->
+                    log.info("Authentication required")
                     authNeeded = true
                     authErrors++
                     if (authErrors > 2) {
+                        log.error("Giving up on authenticating")
                         failure = fromServer.statusCode
                     }
                     return body
@@ -181,8 +192,10 @@ class PncClient {
                         serverErrors++
                         // Give up after several attempts
                         if (serverErrors > 4) {
+                            log.error("Server failure, giving up")
                             failure = fromServer.statusCode
                         } else {
+                            log.info("Server failure, retrying")
                             retry = true
                         }
                     } else {
@@ -202,7 +215,9 @@ class PncClient {
                     throw new AuthException("Authentication is required but" +
                     "unavailable. Try running pgc login?")
                 }
-                auth.refresh()
+                if (authErrors <= 1) {
+                    auth.refresh()
+                }
                 return true
             }
             if (retry) {
@@ -214,29 +229,35 @@ class PncClient {
 
             def json
             if (paginated) {
+                log.debug("Got data page")
                 pagesPending = (resp['totalPages'] - 1) > resp['pageIndex']
                 json = jsonOut(resp['content'])
 
                 // Strip characters so the pages can be stitched together
                 if (pagesPending) {
                     if (pageStitch) {
+                        log.debug("Middle page")
                         // Middle page, remove array open and close
                         json = json[1..-3] + ',\n'
                     } else {
                         // First page, remove array close
+                        log.debug("First page")
                         json = json[0..-3] + ',\n'
                         pageStitch = true
                     }
                     queryParams['pageIndex'] = resp['pageIndex'] + 1
                 } else if (pageStitch) {
                     // Last page, remove array open
+                    log.debug("Last page")
                     json = json[1..-1]
                     pageStitch = false
                 }
             } else if (resp.size() == 1 && resp['content']) {
+                log.debug("Got nested schema")
                 // Schemas nested in an empty object
                 json = jsonOut(resp['content'])
             } else {
+                log.debug("Got data")
                 json = jsonOut(resp)
                 pagesPending = false
             }
@@ -246,6 +267,7 @@ class PncClient {
             return pagesPending
         }
         while (makeRequests()) continue
+        log.debug("Done making requests")
         if (stuffWritten) {
             output.write('\n')
             output.flush()
@@ -289,6 +311,7 @@ class PncClient {
     //
 
     static LinkedHashMap swaggerData(LinkedHashMap root) {
+        log.debug("Processing swagger data")
         // Local helper functions
         def extractRef = { String ref ->
             ref[ref.lastIndexOf('/') + 1..-1]
@@ -299,8 +322,7 @@ class PncClient {
             return ref
         }
         def resolveType = { data, key ->
-            //System.err.println("${key}  ${data}")
-            //System.err.flush()
+            log.debug("Type resolve: ${key} ${data}")
             String refName
             String refType
             String refMultiple
@@ -317,8 +339,7 @@ class PncClient {
                     // Expand nested schemas
                     if (ref['properties']['content']) {
                         def content = ref['properties']['content']
-                        //System.err.println(">> ${content}")
-                        //System.err.flush()
+                        log.debug("Nested schema")
                         if (content['$ref']) {
                             // Singleton
                             refName = extractRef(content['$ref'])
@@ -470,8 +491,6 @@ class PncClient {
                 md.parameters.each { data ->
                     // Pages are handled transparent to the user
                     if (! (data['name'] in ["pageIndex", "pageSize"])) {
-                        //System.err.println("${name} ${type} ${description}")
-                        //System.err.flush()
                         Integer start = out.length()
                         out << '  '
                         if (data['required']) {

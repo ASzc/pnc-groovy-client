@@ -4,7 +4,75 @@ import groovy.cli.picocli.CliBuilder
 import groovy.cli.picocli.OptionAccessor
 import groovy.transform.Memoized
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.LoggerContext
+import ch.qos.logback.classic.encoder.PatternLayoutEncoder
+import ch.qos.logback.core.OutputStreamAppender
+import org.slf4j.LoggerFactory
+
 class PncCli {
+
+    private static setupLogging(
+        OutputStream console,
+        Integer verbosity=0,
+        Integer httpDebug=0
+    ) {
+        LoggerContext context = LoggerFactory.getILoggerFactory()
+        def loggers = context.loggerList
+        context.reset();
+        loggers.add(context.getLogger('ca.szc.groovy.pnc.PncClient'))
+        loggers.add(context.getLogger('ca.szc.groovy.pnc.PncCli'))
+
+        def logHttp = context.getLogger('groovyx.net.http.JavaHttpBuilder')
+        def logHttpHeaders =  context.getLogger('groovy.net.http.JavaHttpBuilder.headers')
+        def logHttpContent =  context.getLogger('groovy.net.http.JavaHttpBuilder.content')
+        logHttp.level = Level.OFF
+        logHttpHeaders.level = Level.OFF
+        logHttpContent.level = Level.OFF
+        switch (httpDebug) {
+            case 3:
+                logHttpContent.level = Level.DEBUG
+            case 2:
+                logHttpHeaders.level = Level.DEBUG
+            case 1:
+                logHttp.level = Level.DEBUG
+                break
+        }
+
+        def pattern = '%-5level %logger{30} %msg%n'
+        def level =  Level.OFF
+        switch (verbosity) {
+            case 1:
+                level = Level.ERROR
+                break
+            case 2:
+                level = Level.INFO
+                break
+            case { it >= 4 }:
+                pattern = '%-5level %logger %msg%n%caller{3}%n'
+            case 3:
+                level = Level.DEBUG
+                break
+        }
+
+        def encoder = new PatternLayoutEncoder()
+        encoder.setContext(context)
+        encoder.setPattern(pattern)
+        encoder.start()
+
+        def appender = new OutputStreamAppender()
+        appender.setContext(context)
+        appender.setName('console')
+        appender.setEncoder(encoder)
+        appender.setOutputStream(console)
+        appender.start()
+
+        loggers[0].addAppender(appender)
+        loggers.each { log ->
+            log.level = level
+        }
+    }
 
     @Memoized
     private static Integer consoleWidth() {
@@ -97,7 +165,7 @@ class PncCli {
 
     private static CliBuilder commandRoot() {
         def cli = new CliBuilder(
-            usage:'pgc [-d] {login,call,list}',
+            usage:'pgc [-v] [-d] {login,call,list}',
             header:"""
                    PNC Groovy Client, a CLI for the PNC REST API.
 
@@ -114,8 +182,10 @@ class PncCli {
         cli.with {
             h longOpt: 'help',
               'Show usage information'
-            d longOpt: 'debug',
-              'Enable debug logging'
+            v longOpt: 'verbose',
+              'Make logging more verbose. Can be used multiple times.'
+            d longOpt: 'http-debug',
+              'Make HTTP logging more verbose. Can be used multiple times.'
         }
         return cli
     }
@@ -137,166 +207,166 @@ class PncCli {
 
     static Integer cli(
         args,
-        PrintWriter console=null,
-        PrintWriter dataOutput=null,
+        OutputStream stderr=null,
+        OutputStream stdout=null,
         Map<String,String> configOverride=null
     ) {
-        console = console ?: new PrintWriter(System.err)
-        dataOutput = dataOutput ?: new PrintWriter(System.out)
-        try {
-            def cli = commandRoot()
-            def options = parse(cli, args, console, -1)
-            if (!options) { return 1 }
-            //console.println(">> ${options.arguments()}")
+        stderr = stderr ?: System.err
+        stdout = stdout ?: System.out
+        def console = new PrintWriter(stderr, true)
+        def dataOutput = new PrintWriter(stdout, true)
 
-            Map<String, String> config
-            File cacheDir
-            def readConfig = { ->
-                if (configOverride) {
-                    config = configOverride
-                } else {
-                    def configPath = homeFile(null, 'CONFIG', '.config/pgc.properties')
-                    def c = new Properties()
-                    if (configPath.exists()) {
-                        c.load(configPath.newDataInputStream())
-                    }
-                    config = c
+        def cli = commandRoot()
+        def options = parse(cli, args, console, -1)
+        if (!options) { return 1 }
+        //console.println(">> ${options.arguments()}")
+
+        setupLogging(stderr, (options.vs ?: []).size(), (options.ds ?: []).size())
+
+        Map<String, String> config
+        File cacheDir
+        def readConfig = { ->
+            if (configOverride) {
+                config = configOverride
+            } else {
+                def configPath = homeFile(null, 'CONFIG', '.config/pgc.properties')
+                def c = new Properties()
+                if (configPath.exists()) {
+                    c.load(configPath.newDataInputStream())
                 }
-                cacheDir = homeFile(config['cache'], 'CACHE', ".cache/pgc")
+                config = c
             }
-            def configMissing = { id ->
-                if (!config[id]) {
-                    console.println("error: Setting ${id} is missing from the config file")
-                    return true
-                }
-                return false
+            cacheDir = homeFile(config['cache'], 'CACHE', ".cache/pgc")
+        }
+        def configMissing = { id ->
+            if (!config[id]) {
+                console.println("error: Setting ${id} is missing from the config file")
+                return true
             }
+            return false
+        }
 
-            def pncClient
-            def constructPncClient = { readOnly ->
-                if (configMissing('pnc.url')) { return 4 }
+        def pncClient
+        def constructPncClient = { readOnly ->
+            if (configMissing('pnc.url')) { return 4 }
 
-                pncClient = new PncClient(
-                    config['pnc.url'],
-                    cacheDir,
-                    readOnly ? null : Auth.retrieve(cacheDir),
-                )
-            }
+            pncClient = new PncClient(
+                config['pnc.url'],
+                cacheDir,
+                readOnly ? null : Auth.retrieve(cacheDir),
+            )
+        }
 
-            String subcommand = options.arguments()[0]
-            def subargs = options.arguments().drop(1)
-            switch (subcommand) {
-                case 'call':
-                    def suboptions = parse(commandCall(), subargs, console, 2)
-                    if (!suboptions) { return 3 }
+        String subcommand = options.arguments()[0]
+        def subargs = options.arguments().drop(1)
+        switch (subcommand) {
+            case 'call':
+                def suboptions = parse(commandCall(), subargs, console, 2)
+                if (!suboptions) { return 3 }
 
-                    // Positional args -> method coordinates
-                    def positionals = suboptions.arguments()
-                    def group = positionals[0]
-                    def operation = positionals[1]
+                // Positional args -> method coordinates
+                def positionals = suboptions.arguments()
+                def group = positionals[0]
+                def operation = positionals[1]
 
-                    // Optional args -> call keyword arguments
-                    def callArgs = suboptions.as
+                // Optional args -> call keyword arguments
+                def callArgs = suboptions.as
 
-                    readConfig()
-                    constructPncClient(false)
+                readConfig()
+                constructPncClient(false)
 
-                    try {
-                        pncClient.execStream(
-                            group,
-                            operation,
-                            dataOutput,
-                            callArgs,
-                        )
-                    } catch (ModelCoerceException e) {
-                        console.println(e.message)
-                        return 5
-                    } catch (ServerException e) {
-                        console.println(e.message)
-                        return 6
-                    } catch (AuthException e) {
-                        console.println(e.message)
-                        return 7
-                    }
-                    break
-                case 'list':
-                    def suboptions = parse(commandList(), subargs, console)
-                    if (!suboptions) { return 3 }
-
-                    readConfig()
-                    constructPncClient(true)
-
-                    dataOutput.print(
-                        pncClient.formatListing(
-                            suboptions.e ?: /.*/,
-                            consoleWidth(),
-                            (suboptions.vs ?: []).size(),
-                        )
+                try {
+                    pncClient.execStream(
+                        group,
+                        operation,
+                        dataOutput,
+                        callArgs,
                     )
-                    break
-                case 'login':
-                    def suboptions = parse(commandLogin(), subargs, console)
-                    if (!suboptions) { return 3 }
+                } catch (ModelCoerceException e) {
+                    console.println(e.message)
+                    return 5
+                } catch (ServerException e) {
+                    console.println(e.message)
+                    return 6
+                } catch (AuthException e) {
+                    console.println(e.message)
+                    return 7
+                }
+                break
+            case 'list':
+                def suboptions = parse(commandList(), subargs, console)
+                if (!suboptions) { return 3 }
 
-                    readConfig()
+                readConfig()
+                constructPncClient(true)
 
-                    if (configMissing('auth.url')) { return 4 }
-                    if (configMissing('auth.realm')) { return 4 }
+                dataOutput.print(
+                    pncClient.formatListing(
+                        suboptions.e ?: /.*/,
+                        consoleWidth(),
+                        (suboptions.vs ?: []).size(),
+                    )
+                )
+                break
+            case 'login':
+                def suboptions = parse(commandLogin(), subargs, console)
+                if (!suboptions) { return 3 }
 
-                    def reader = null
-                    def prompt = { name, disableEcho ->
-                        def p = "${name}: "
-                        def sysConsole = System.console()
-                        String line
-                        if (sysConsole == null) {
-                            reader = reader ?: System.in.newReader()
-                            line = reader.readLine()
+                readConfig()
+
+                if (configMissing('auth.url')) { return 4 }
+                if (configMissing('auth.realm')) { return 4 }
+
+                def reader = null
+                def prompt = { name, disableEcho ->
+                    def p = "${name}: "
+                    def sysConsole = System.console()
+                    String line
+                    if (sysConsole == null) {
+                        reader = reader ?: System.in.newReader()
+                        line = reader.readLine()
+                    } else {
+                        if (disableEcho) {
+                            line = sysConsole.readPassword(p)
                         } else {
-                            if (disableEcho) {
-                                line = sysConsole.readPassword(p)
-                            } else {
-                                line = sysConsole.readLine(p)
-                            }
+                            line = sysConsole.readLine(p)
                         }
-                        return line.trim()
                     }
-                    if (reader) {
-                        reader.close()
-                    }
+                    return line.trim()
+                }
+                if (reader) {
+                    reader.close()
+                }
 
-                    try {
-                        if (suboptions.c) {
-                            Auth.store(
-                                config['auth.url'],
-                                config['auth.realm'],
-                                Auth.Grant.CLIENT,
-                                prompt('Client ID', false),
-                                prompt('Client Secret', true),
-                                cacheDir,
-                            )
-                        } else {
-                            Auth.store(
-                                config['auth.url'],
-                                config['auth.realm'],
-                                Auth.Grant.USER,
-                                prompt('Username', false),
-                                prompt('Password', true),
-                                cacheDir,
-                            )
-                        }
-                    } catch (AuthException e) {
-                        console.println("Unable to authenticate: ${e.message}")
-                        return 7
+                try {
+                    if (suboptions.c) {
+                        Auth.store(
+                            config['auth.url'],
+                            config['auth.realm'],
+                            Auth.Grant.CLIENT,
+                            prompt('Client ID', false),
+                            prompt('Client Secret', true),
+                            cacheDir,
+                        )
+                    } else {
+                        Auth.store(
+                            config['auth.url'],
+                            config['auth.realm'],
+                            Auth.Grant.USER,
+                            prompt('Username', false),
+                            prompt('Password', true),
+                            cacheDir,
+                        )
                     }
-                    break
-                default:
-                    console.println("error: Unknown subcommand ${subcommand}")
-                    cli.usage()
-                    return 2
-            }
-        } finally {
-            console.flush()
-            dataOutput.flush()
+                } catch (AuthException e) {
+                    console.println("Unable to authenticate: ${e.message}")
+                    return 7
+                }
+                break
+            default:
+                console.println("error: Unknown subcommand ${subcommand}")
+                cli.usage()
+                return 2
         }
         return 0
     }

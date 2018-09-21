@@ -5,8 +5,8 @@ import spock.lang.*
 class CliSpec extends Specification {
 
     def cli(String... args) {
-        def o = new StringWriter()
-        def code = PncCli.cli(args, new PrintWriter(o))
+        def o = new ByteArrayOutputStream()
+        def code = PncCli.cli(args, o)
         return [code, o.toString()]
     }
 
@@ -15,7 +15,7 @@ class CliSpec extends Specification {
             def (code, out) = cli()
         then:
             code == 2
-            out.startsWith('error: Unknown subcommand null\nUsage: pgc [-d] {login,call,list}')
+            out.startsWith('error: Unknown subcommand null\nUsage: pgc [-v] [-d] {login,call,list}')
     }
 
     def "root help returns help"() {
@@ -23,7 +23,7 @@ class CliSpec extends Specification {
             def (code, out) = cli('-h')
         then:
             code == 1
-            out.startsWith('Usage: pgc [-d] {login,call,list}')
+            out.startsWith('Usage: pgc [-v] [-d] {login,call,list}')
     }
 
     def "invalid subcommand returns help"() {
@@ -31,7 +31,7 @@ class CliSpec extends Specification {
             def (code, out) = cli('asd', '-h')
         then:
             code == 2
-            out.startsWith('error: Unknown subcommand asd\nUsage: pgc [-d] {login,call,list}')
+            out.startsWith('error: Unknown subcommand asd\nUsage: pgc [-v] [-d] {login,call,list}')
     }
 
     def "login help returns help"() {

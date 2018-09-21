@@ -1,0 +1,7 @@
+<!--
+    No-Op default configuration to ensure that nothing gets printed to stdout
+    before the CLI has time to configure logging properly.
+-->
+<configuration>
+    <root level="off" />
+</configuration>
