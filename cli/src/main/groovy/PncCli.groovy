@@ -321,6 +321,9 @@ class PncCli {
                         (suboptions.vs ?: []).size(),
                     )
                 )
+                // PrintWriter(s, true).print doesn't autoflush, since the
+                // autoflush flag is for line-buffering, not zero buffering.
+                dataOutput.flush()
                 break
             case 'login':
                 def suboptions = parse(commandLogin(), subargs, console)

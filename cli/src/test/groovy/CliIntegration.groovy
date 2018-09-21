@@ -32,6 +32,15 @@ class CliIntegrationSpec extends Specification {
         }
     }
 
+    def "list returns data"() {
+        when:
+            def (code, err, out) = cli('list')
+        then:
+            code == 0
+            err.length() == 0
+            out.length() > 200
+    }
+
     def "simple query returns data"() {
         when:
             def (code, err, out) = cli('call', 'build-records', 'get-specific', '-a', 'id=1')
