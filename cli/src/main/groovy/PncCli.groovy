@@ -255,7 +255,7 @@ class PncCli {
                 auth = null
             } else {
                 auth = Auth.retrieve(cacheDir)
-                if (config['auth.url'] != auth.info.url) {
+                if (auth && config['auth.url'] != auth.info.url) {
                     console.println("error: auth.url does not match the stored authentication tokens, re-run `pgc login` first")
                     return 7
                 }
