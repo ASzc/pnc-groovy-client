@@ -240,9 +240,13 @@ class PncCli {
             if (configOverride) {
                 config = configOverride
             } else {
-                def configPath = homeFile(null, 'CONFIG', '.config/pgc.properties')
                 def c = new Properties()
-                if (configPath.exists()) {
+                def system = new File('/etc/pgc.properties')
+                if (system.exists()) {
+                    c.load(system.newDataInputStream())
+                }
+                def user = homeFile(null, 'CONFIG', '.config/pgc.properties')
+                if (user.exists()) {
                     c.load(configPath.newDataInputStream())
                 }
                 config = c
