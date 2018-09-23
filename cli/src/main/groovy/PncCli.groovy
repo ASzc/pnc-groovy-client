@@ -247,7 +247,7 @@ class PncCli {
                 }
                 def user = homeFile(null, 'CONFIG', '.config/pgc.properties')
                 if (user.exists()) {
-                    c.load(configPath.newDataInputStream())
+                    c.load(user.newDataInputStream())
                 }
                 config = c
             }
