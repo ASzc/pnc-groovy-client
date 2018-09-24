@@ -11,6 +11,7 @@ A minimal [Newcastle](https://github.com/project-ncl/pnc) REST API Client writte
 - Transparent pagination (pages are detected, fetched, and unpacked for you)
 - Authentication
 - Optional CLI
+  - [RPM available](https://copr.devel.redhat.com/coprs/aszczucz/pnc-groovy-client/) with pre-written config file
   - debugging
   - shell scripts
   - discovering new API operations
@@ -23,7 +24,6 @@ A minimal [Newcastle](https://github.com/project-ncl/pnc) REST API Client writte
   - Model mapping
   - Construction arguments
 - First release to maven central
-- RPMs
 
 ## Usage
 
