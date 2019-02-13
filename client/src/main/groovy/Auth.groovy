@@ -156,13 +156,14 @@ class Auth {
         Auth.Grant grant,
         String name,
         String secret,
-        File cache
+        File cache,
+        HttpBuilder http=null
     ) {
-        def auth = Auth.initial(url, realm, grant, name, secret)
+        def auth = Auth.initial(url, realm, grant, name, secret, http)
         Auth.infoOut(cache, auth.info)
     }
 
-    static Auth retrieve(File cache, String url) {
+    static Auth retrieve(File cache, String url, HttpBuilder http=null) {
         if (!url) {
             return null
         }
@@ -170,7 +171,7 @@ class Auth {
         if (!info) {
             return null
         }
-        return new Auth(info)
+        return new Auth(info, http)
     }
 
     //

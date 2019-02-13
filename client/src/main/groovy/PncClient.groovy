@@ -11,6 +11,13 @@ import groovyx.net.http.HttpBuilder
 @Slf4j
 class PncClient {
 
+    static HttpBuilder defaultHttp(HttpBuilder http, String api) {
+        return http ?: HttpBuilder.configure {
+            request.uri = api
+            request.contentType = ContentTypes.JSON[0]
+        }
+    }
+
     private HttpBuilder http
     private LinkedHashMap apiData
     private Auth auth
@@ -28,8 +35,11 @@ class PncClient {
      * tokens. If a File, use that directory as the cache directory.
      * @param auth If null, disable authentication. Otherwise, use this to
      * perform authentication if the API requests it.
+     * @param http If null, use default HTTPBuilder. Otherwise, use this to
+     * perform HTTP requests to the api URL. Custom HTTPBuilders must specify
+     * request.uri and request.contentType = ContentTypes.JSON[0].
      */
-    PncClient(api, File cache=null, Auth auth=null) {
+    PncClient(api, File cache=null, Auth auth=null, HttpBuilder http=null) {
         this.auth = auth
         this.cacheDir = cache
 
@@ -38,11 +48,7 @@ class PncClient {
             log.debug("Reading API data from file ${api}")
             root = new JsonSlurper().parse(api)
         } else {
-            this.http = HttpBuilder.configure {
-                request.uri = api
-                request.contentType = ContentTypes.JSON[0]
-            }
-
+            this.http = defaultHttp(http, api)
             if (cache != null) {
                 File swaggerCache = new File(cache, "${Misc.sha256(api)}.json")
                 if (!swaggerCache.exists()) {
