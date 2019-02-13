@@ -16,13 +16,12 @@ class ClientIntegrationSpec extends Specification {
             out instanceof Map
             'id' in out
             out['id'] == 1
-            'executionRootVersion' in out
             'status' in out
     }
 
     def "paged query returns data"() {
         when:
-            def out = client.exec('buildRecords', 'getBuiltArtifacts', [id: 1])
+            def out = client.exec('buildRecords', 'getBuiltArtifacts', [id: 7113])
         then:
             out instanceof List
     }

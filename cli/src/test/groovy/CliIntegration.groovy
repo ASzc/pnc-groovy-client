@@ -44,24 +44,27 @@ class CliIntegrationSpec extends Specification {
     def "simple query returns data"() {
         when:
             def (code, err, out) = cli('call', 'build-records', 'get-specific', '-a', 'id=1')
+            def start = out.take(100)
         then:
             code == 0
             err.length() == 0
             out.length() != 0
             isValidJson(out)
-            out.startsWith('{\n    "id": 1,\n')
+            start.startsWith('{\n    "id": 1,\n')
     }
 
     def "paged query returns data"() {
         when:
-            def (code, err, out) = cli('call', 'build-records', 'get-built-artifacts', '-a', 'id=1')
+            def (code, err, out) = cli('call', 'build-records', 'get-built-artifacts', '-a', 'id=7113')
+            def start = out.take(100)
+            def end = out.reverse().take(100).reverse()
         then:
             code == 0
             err.length() == 0
             out.length() != 0
             isValidJson(out)
-            out.startsWith('[\n    {\n        "id": 1,\n')
-            out.endsWith('    }\n]\n')
+            start.startsWith('[\n    {\n        "id": ')
+            end.endsWith('    }\n]\n')
     }
 
     def "non-authed write returns Auth error"() {

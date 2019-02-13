@@ -235,7 +235,10 @@ class PncClient {
             }
 
             def json
-            if (paginated) {
+            if (resp == null) {
+                log.debug("Got null")
+                throw new ServerException("Server returned null")
+            } else if (paginated) {
                 log.debug("Got data page")
                 pagesPending = (resp['totalPages'] - 1) > resp['pageIndex']
                 json = jsonOut(resp['content'])
