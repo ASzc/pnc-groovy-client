@@ -83,10 +83,15 @@ class Auth {
         if (file.exists()) {
             log.debug("Reading auth tokens from ${file}")
             def info
-            file.withObjectInputStream { i ->
-                info = i.readObject()
+            try {
+                file.withObjectInputStream { i ->
+                    info = i.readObject()
+                }
+                return info
+            } catch (Exception e) {
+                log.debug("Unable to read token cache, returning nothing. ${e}")
+                return null
             }
-            return info
         } else {
             log.debug("No auth tokens in cache ${dir} for url ${url}")
             return null
