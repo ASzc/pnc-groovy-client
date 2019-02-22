@@ -7,6 +7,8 @@ import groovyx.net.http.ContentTypes
 import groovyx.net.http.HttpBuilder
 import groovyx.net.http.NativeHandlers
 
+import javax.net.ssl.SSLContext
+
 @Slf4j
 class Auth {
 
@@ -19,9 +21,12 @@ class Auth {
         CLIENT, USER
     }
 
-    static HttpBuilder defaultHttp(http) {
+    static HttpBuilder defaultHttp(http, ssl=null) {
         return http ?: HttpBuilder.configure {
             request.contentType = ContentTypes.JSON[0]
+            if (ssl != null) {
+                execution.setSslContext(ssl)
+            }
         }
     }
 
@@ -98,6 +103,20 @@ class Auth {
         Auth.Grant grant,
         String name,
         String secret,
+        SSLContext ssl
+    ) {
+        return Auth.initial(
+            url, realm, grant, name, secret,
+            Auth.defaultHttp(null, ssl)
+        )
+    }
+
+    static Auth initial(
+        String url,
+        String realm,
+        Auth.Grant grant,
+        String name,
+        String secret,
         HttpBuilder http=null
     ) {
         log.info("Getting initial authentication tokens")
@@ -150,7 +169,22 @@ class Auth {
         )
     }
 
-    static void store(
+    static Auth store(
+        String url,
+        String realm,
+        Auth.Grant grant,
+        String name,
+        String secret,
+        File cache,
+        SSLContext ssl
+    ) {
+        return Auth.store(
+            url, realm, grant, name, secret,
+            Auth.defaultHttp(null, ssl)
+        )
+    }
+
+    static Auth store(
         String url,
         String realm,
         Auth.Grant grant,
@@ -161,6 +195,14 @@ class Auth {
     ) {
         def auth = Auth.initial(url, realm, grant, name, secret, http)
         Auth.infoOut(cache, auth.info)
+        return auth
+    }
+
+    static Auth retrieve(File cache, String url, SSLContext ssl) {
+        return Auth.retrieve(
+            cache, url,
+            Auth.defaultHttp(null, ssl)
+        )
     }
 
     static Auth retrieve(File cache, String url, HttpBuilder http=null) {

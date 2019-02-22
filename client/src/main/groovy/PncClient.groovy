@@ -8,13 +8,18 @@ import groovyx.net.http.ContentTypes
 import groovyx.net.http.optional.Download
 import groovyx.net.http.HttpBuilder
 
+import javax.net.ssl.SSLContext
+
 @Slf4j
 class PncClient {
 
-    static HttpBuilder defaultHttp(HttpBuilder http, String api) {
+    static HttpBuilder defaultHttp(HttpBuilder http, String api, ssl=null) {
         return http ?: HttpBuilder.configure {
             request.uri = api
             request.contentType = ContentTypes.JSON[0]
+            if (ssl != null) {
+                execution.setSslContext(ssl)
+            }
         }
     }
 
@@ -22,6 +27,29 @@ class PncClient {
     private LinkedHashMap apiData
     private Auth auth
     private File cacheDir
+
+
+    /**
+     * Prepare a client to operate against the PNC REST API, by preprocessing
+     * the swagger data published by that API.
+     *
+     * @param api Must be the String URL to swagger.json within the REST API,
+     * including scheme, host, and path. Example:
+     * http://pnc.example.com/pnc-rest/rest/swagger.json
+     * @param ssl SSLContext to use for HTTPS API calls
+     * @param cache If null, disable caching of swagger data and authentication
+     * tokens. If a File, use that directory as the cache directory.
+     * @param auth If null, disable authentication. Otherwise, use this to
+     * perform authentication if the API requests it.
+     */
+    PncClient(api, SSLContext ssl, File cache=null, Auth auth=null) {
+        this(
+            api,
+            cache,
+            auth,
+            defaultHttp(null, api, ssl)
+        )
+    }
 
     /**
      * Prepare a client to operate against the PNC REST API, by preprocessing
