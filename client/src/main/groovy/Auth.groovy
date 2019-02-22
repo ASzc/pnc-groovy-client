@@ -179,7 +179,7 @@ class Auth {
         SSLContext ssl
     ) {
         return Auth.store(
-            url, realm, grant, name, secret,
+            url, realm, grant, name, secret, cache,
             Auth.defaultHttp(null, ssl)
         )
     }
