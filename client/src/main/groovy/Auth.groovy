@@ -4,10 +4,11 @@ import groovy.transform.EqualsAndHashCode
 import groovy.util.logging.Slf4j
 
 import groovyx.net.http.ContentTypes
+import groovyx.net.http.ApacheHttpBuilder
 import groovyx.net.http.HttpBuilder
 import groovyx.net.http.NativeHandlers
 
-import javax.net.ssl.SSLContext
+import org.apache.http.impl.client.HttpClientBuilder
 
 @Slf4j
 class Auth {
@@ -21,11 +22,11 @@ class Auth {
         CLIENT, USER
     }
 
-    static HttpBuilder defaultHttp(http, ssl=null) {
-        return http ?: HttpBuilder.configure {
+    static HttpBuilder defaultHttp(httpCustomizer) {
+        return ApacheHttpBuilder.configure {
             request.contentType = ContentTypes.JSON[0]
-            if (ssl != null) {
-                execution.setSslContext(ssl)
+            if (httpCustomizer != null) {
+                client.clientCustomizer(httpCustomizer)
             }
         }
     }
@@ -108,24 +109,10 @@ class Auth {
         Auth.Grant grant,
         String name,
         String secret,
-        SSLContext ssl
-    ) {
-        return Auth.initial(
-            url, realm, grant, name, secret,
-            Auth.defaultHttp(null, ssl)
-        )
-    }
-
-    static Auth initial(
-        String url,
-        String realm,
-        Auth.Grant grant,
-        String name,
-        String secret,
-        HttpBuilder http=null
+        Closure<HttpClientBuilder> httpCustomizer=null
     ) {
         log.info("Getting initial authentication tokens")
-        http = Auth.defaultHttp(http)
+        def http = Auth.defaultHttp(httpCustomizer)
 
         def requestBody
         def clientId
@@ -181,36 +168,18 @@ class Auth {
         String name,
         String secret,
         File cache,
-        SSLContext ssl
+        Closure<HttpClientBuilder> httpCustomizer=null
     ) {
-        return Auth.store(
-            url, realm, grant, name, secret, cache,
-            Auth.defaultHttp(null, ssl)
-        )
-    }
-
-    static Auth store(
-        String url,
-        String realm,
-        Auth.Grant grant,
-        String name,
-        String secret,
-        File cache,
-        HttpBuilder http=null
-    ) {
-        def auth = Auth.initial(url, realm, grant, name, secret, http)
+        def auth = Auth.initial(url, realm, grant, name, secret, httpCustomizer)
         Auth.infoOut(cache, auth.info)
         return auth
     }
 
-    static Auth retrieve(File cache, String url, SSLContext ssl) {
-        return Auth.retrieve(
-            cache, url,
-            Auth.defaultHttp(null, ssl)
-        )
-    }
-
-    static Auth retrieve(File cache, String url, HttpBuilder http=null) {
+    static Auth retrieve(
+        File cache,
+        String url,
+        Closure<HttpClientBuilder> httpCustomizer=null
+    ) {
         if (!url) {
             return null
         }
@@ -218,7 +187,7 @@ class Auth {
         if (!info) {
             return null
         }
-        return new Auth(info, http)
+        return new Auth(info, defaultHttp(httpCustomizer))
     }
 
     //
@@ -230,7 +199,7 @@ class Auth {
 
     private Auth(info, http=null) {
         this.info = info
-        this.http = Auth.defaultHttp(http)
+        this.http = http
     }
 
     void refresh(File cache=null) {

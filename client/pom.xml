@@ -30,7 +30,7 @@
         </dependency>
         <dependency>
             <groupId>io.github.http-builder-ng</groupId>
-            <artifactId>http-builder-ng-core</artifactId>
+            <artifactId>http-builder-ng-apache</artifactId>
             <version>1.0.3</version>
         </dependency>
         <dependency>

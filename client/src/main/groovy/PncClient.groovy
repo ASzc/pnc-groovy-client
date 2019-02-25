@@ -6,19 +6,20 @@ import groovy.util.logging.Slf4j
 
 import groovyx.net.http.ContentTypes
 import groovyx.net.http.optional.Download
+import groovyx.net.http.ApacheHttpBuilder
 import groovyx.net.http.HttpBuilder
 
-import javax.net.ssl.SSLContext
+import org.apache.http.impl.client.HttpClientBuilder
 
 @Slf4j
 class PncClient {
 
-    static HttpBuilder defaultHttp(HttpBuilder http, String api, ssl=null) {
-        return http ?: HttpBuilder.configure {
+    static HttpBuilder defaultHttp(httpCustomizer, api) {
+        return ApacheHttpBuilder.configure {
             request.uri = api
             request.contentType = ContentTypes.JSON[0]
-            if (ssl != null) {
-                execution.setSslContext(ssl)
+            if (httpCustomizer != null) {
+                client.clientCustomizer(httpCustomizer)
             }
         }
     }
@@ -27,29 +28,6 @@ class PncClient {
     private LinkedHashMap apiData
     private Auth auth
     private File cacheDir
-
-
-    /**
-     * Prepare a client to operate against the PNC REST API, by preprocessing
-     * the swagger data published by that API.
-     *
-     * @param api Must be the String URL to swagger.json within the REST API,
-     * including scheme, host, and path. Example:
-     * http://pnc.example.com/pnc-rest/rest/swagger.json
-     * @param ssl SSLContext to use for HTTPS API calls
-     * @param cache If null, disable caching of swagger data and authentication
-     * tokens. If a File, use that directory as the cache directory.
-     * @param auth If null, disable authentication. Otherwise, use this to
-     * perform authentication if the API requests it.
-     */
-    PncClient(api, SSLContext ssl, File cache=null, Auth auth=null) {
-        this(
-            api,
-            cache,
-            auth,
-            defaultHttp(null, api, ssl)
-        )
-    }
 
     /**
      * Prepare a client to operate against the PNC REST API, by preprocessing
@@ -63,11 +41,15 @@ class PncClient {
      * tokens. If a File, use that directory as the cache directory.
      * @param auth If null, disable authentication. Otherwise, use this to
      * perform authentication if the API requests it.
-     * @param http If null, use default HTTPBuilder. Otherwise, use this to
-     * perform HTTP requests to the api URL. Custom HTTPBuilders must specify
-     * request.uri and request.contentType = ContentTypes.JSON[0].
+     * @param httpCustomizer Closure to modify the http client implementation.
+     * See org.apache.http.impl.client.HttpClientBuilder
      */
-    PncClient(api, File cache=null, Auth auth=null, HttpBuilder http=null) {
+    PncClient(
+        api,
+        File cache=null,
+        Auth auth=null,
+        Closure<HttpClientBuilder> httpCustomizer=null
+    ) {
         this.auth = auth
         this.cacheDir = cache
 
@@ -76,7 +58,7 @@ class PncClient {
             log.debug("Reading API data from file ${api}")
             root = new JsonSlurper().parse(api)
         } else {
-            this.http = defaultHttp(http, api)
+            this.http = defaultHttp(httpCustomizer, api)
             if (cache != null) {
                 File swaggerCache = new File(cache, "${Misc.sha256(api)}.json")
                 if (!swaggerCache.exists()) {
