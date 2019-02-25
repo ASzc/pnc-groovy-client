@@ -9,7 +9,7 @@ class AuthSpec extends Specification {
     def "auth tokens can be written and read"() {
         setup:
             def url = 'https://example.com'
-            def writtenInfo = new Auth.AuthInfo(
+            def writtenInfo = new AuthInfo(
                 url,
                 'some-client-id',
                 'some-refresh-token',

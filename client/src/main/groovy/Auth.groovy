@@ -1,6 +1,5 @@
 package ca.szc.groovy.pnc
 
-import groovy.transform.EqualsAndHashCode
 import groovy.util.logging.Slf4j
 
 import groovyx.net.http.ContentTypes
@@ -35,27 +34,6 @@ class Auth {
     // Serialize
     //
 
-    @EqualsAndHashCode
-    static class AuthInfo implements Serializable {
-        static final serialVersionUID = 7092186726994503341L
-
-        final String url
-        final String clientId
-        final String refreshToken
-        final String accessToken
-
-        AuthInfo(url, clientId, refreshToken, accessToken) {
-            assert url != null
-            assert clientId != null
-            assert refreshToken != null
-            assert accessToken != null
-            this.url = url
-            this.clientId = clientId
-            this.refreshToken = refreshToken
-            this.accessToken = accessToken
-        }
-    }
-
     static String filename(String url) {
         "${Misc.sha256(url)}.ser"
     }
@@ -85,9 +63,9 @@ class Auth {
             log.debug("Reading auth tokens from ${file}")
             def info
             try {
-                file.withObjectInputStream { i ->
+                file.withObjectInputStream(AuthInfo.classLoader, { i ->
                     info = i.readObject()
-                }
+                })
                 return info
             } catch (Exception e) {
                 log.debug("Unable to read token cache, returning nothing. ${e}")
