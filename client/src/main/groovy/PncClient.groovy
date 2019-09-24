@@ -1,7 +1,7 @@
 package ca.szc.groovy.pnc
 
 import groovy.json.JsonOutput
-import groovy.json.JsonSlurper
+import groovy.json.JsonSlurperClassic
 import groovy.util.logging.Slf4j
 
 import groovyx.net.http.ContentTypes
@@ -56,7 +56,7 @@ class PncClient {
         LinkedHashMap root
         if (api instanceof File) {
             log.debug("Reading API data from file ${api}")
-            root = new JsonSlurper().parse(api)
+            root = new JsonSlurperClassic().parse(api)
         } else {
             this.http = defaultHttp(httpCustomizer, api)
             if (cache != null) {
@@ -67,7 +67,7 @@ class PncClient {
                     this.http.get { Download.toFile(delegate, swaggerCache) }
                 }
                 log.debug("Reading API data from cache ${swaggerCache}")
-                root = new JsonSlurper().parse(swaggerCache)
+                root = new JsonSlurperClassic().parse(swaggerCache)
             } else {
                 log.debug("Downloading API data from ${api}")
                 root = this.http.get { }
@@ -89,7 +89,7 @@ class PncClient {
     def exec(String group, String operation, Map kwargs=[:]) {
         def rawOutput = new StringWriter()
         execStream(group, operation, rawOutput, kwargs)
-        return new JsonSlurper().parseText(rawOutput.toString())
+        return new JsonSlurperClassic().parseText(rawOutput.toString())
     }
 
     /**
