@@ -180,6 +180,12 @@ class PncClient {
                 request.uri.path = path
                 request.uri.query = queryParams
 
+                if (method['consumes'] && !method['consumes'].contains('application/json')) {
+                    def consumes = method['consumes'].find { it != 'application/json' }
+                    log.debug("Non-standard request content type ${method['consumes']}")
+                    request.contentType = consumes
+                }
+
                 if (auth != null && auth.accessToken != null) {
                     if (authErrors <= 1) {
                         log.debug("Trying request with authentication")
@@ -376,9 +382,21 @@ class PncClient {
                 } else if (data['schema']['type']) {
                     if (data['schema']['items']) {
                         // Array
-                        refName = extractRef(data['schema']['items']['$ref'])
-                        refType = resolveRef(refName)
-                        refMultiple = data['schema']['type']
+                        if (data['schema']['items']['$ref']) {
+                            refName = extractRef(data['schema']['items']['$ref'])
+                            refType = resolveRef(refName)
+                            refMultiple = data['schema']['type']
+                        } else if (data['schema']['items']['type'] == 'object') {
+                            // Non-descript object
+                            refName = data['schema']['items']['type']
+                            refType = null
+                            refMultiple = null
+                        } else {
+                            // Primitive
+                            refName = data['schema']['type']
+                            refType = null
+                            refMultiple = null
+                        }
                     } else {
                         // Primitive
                         refName = data['schema']['type']
