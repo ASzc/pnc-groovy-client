@@ -293,7 +293,7 @@ class PncCli {
                 def operation = positionals[1]
 
                 // Optional args -> call keyword arguments
-                def callArgs = suboptions.as
+                def callArgs = suboptions.as ?: [:]
 
                 readConfig()
                 def code = constructPncClient(false)
